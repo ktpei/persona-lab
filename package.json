@@ -1,0 +1,17 @@
+{
+  "name": "persona-lab",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @persona-lab/web dev",
+    "dev:worker": "pnpm --filter @persona-lab/worker dev",
+    "build": "pnpm --filter @persona-lab/shared build && pnpm --filter @persona-lab/web build && pnpm --filter @persona-lab/worker build",
+    "db:push": "pnpm --filter @persona-lab/web db:push",
+    "db:generate": "pnpm --filter @persona-lab/web db:generate",
+    "db:studio": "pnpm --filter @persona-lab/web db:studio",
+    "setup": "pnpm install && pnpm db:push && pnpm db:generate",
+    "lint": "pnpm -r lint"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

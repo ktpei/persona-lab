@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RunStatus {
+  PENDING
+  PARSING
+  SIMULATING
+  AGGREGATING
+  COMPLETED
+  FAILED
+}
+
+enum EpisodeStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  ABANDONED
+  FAILED
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  flows       Flow[]
+  personas    Persona[]
+}
+
+model Flow {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+  frames    Frame[]
+  runs      Run[]
+}
+
+model Frame {
+  id             String      @id @default(cuid())
+  flowId         String
+  flow           Flow        @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  stepIndex      Int
+  imagePath      String
+  summary        String?
+  parsedElements Json?
+  parsed         Boolean     @default(false)
+  stepTraces     StepTrace[]
+
+  @@unique([flowId, stepIndex])
+}
+
+model Persona {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  knobs     Json?
+  traits    Json?
+  ageGroup  String?
+  gender    String?
+  createdAt DateTime  @default(now())
+  runs      RunPersona[]
+  episodes  Episode[]
+}
+
+model Run {
+  id         String    @id @default(cuid())
+  flowId     String
+  flow       Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  config     Json
+  status     RunStatus @default(PENDING)
+  reportJson Json?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  personas   RunPersona[]
+  episodes   Episode[]
+  findings   Finding[]
+}
+
+model RunPersona {
+  runId     String
+  run       Run     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  personaId String
+  persona   Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
+
+  @@id([runId, personaId])
+}
+
+model Episode {
+  id        String        @id @default(cuid())
+  runId     String
+  run       Run           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  personaId String
+  persona   Persona       @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  status    EpisodeStatus @default(PENDING)
+  seed      Int?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  steps     StepTrace[]
+}
+
+model StepTrace {
+  id          String  @id @default(cuid())
+  episodeId   String
+  episode     Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  stepIndex   Int
+  frameId     String
+  frame       Frame   @relation(fields: [frameId], references: [id], onDelete: Cascade)
+  observation Json
+  reasoning   Json
+  action      String
+  confidence  Float
+  friction    Float
+  dropoffRisk Float
+  memory      String?
+
+  @@unique([episodeId, stepIndex])
+}
+
+model Finding {
+  id               String  @id @default(cuid())
+  runId            String
+  run              Run     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  issue            String
+  evidence         String
+  severity         Float
+  frequency        Int
+  affectedPersonas Json
+  elementRef       String?
+  stepIndex        Int?
+  recommendedFix   String?
+}
