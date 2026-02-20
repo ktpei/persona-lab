@@ -1,0 +1,63 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Light mode (default) — warm off-white */
+  --color-background: #FAF7F4;
+  --color-foreground: #1F1A17;
+  --color-muted: #F0EBE6;
+  --color-muted-foreground: #857f79;
+  --color-border: #DDD7D0;
+  --color-primary: #5A7A9E;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #EDE8E3;
+  --color-secondary-foreground: #1F1A17;
+  --color-accent: #EDE8E3;
+  --color-accent-foreground: #1F1A17;
+  --color-destructive: #d93830;
+  --color-destructive-foreground: #ffffff;
+  --color-ring: #5A7A9E;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #1F1A17;
+  --color-popover: #FFFFFF;
+  --color-popover-foreground: #1F1A17;
+  --color-input: #DDD7D0;
+  --color-sidebar: #F3EEE9;
+  --color-sidebar-foreground: #1F1A17;
+  --color-sidebar-active: #5A7A9E;
+  --radius: 0.25rem;
+}
+
+/* Dark mode */
+.dark {
+  --color-background: #1F1A17;
+  --color-foreground: #f5f2ef;
+  --color-muted: #302c28;
+  --color-muted-foreground: #9a9590;
+  --color-border: #3a3530;
+  --color-primary: #7A92B0;
+  --color-primary-foreground: #141a1f;
+  --color-secondary: #322e2a;
+  --color-secondary-foreground: #f5f2ef;
+  --color-accent: #322e2a;
+  --color-accent-foreground: #f5f2ef;
+  --color-destructive: #e5534b;
+  --color-destructive-foreground: #fafafa;
+  --color-ring: #7A92B0;
+  --color-card: #282320;
+  --color-card-foreground: #f5f2ef;
+  --color-popover: #302c28;
+  --color-popover-foreground: #f5f2ef;
+  --color-input: #3a3530;
+  --color-sidebar: #1a1613;
+  --color-sidebar-foreground: #f5f2ef;
+  --color-sidebar-active: #7A92B0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }
