@@ -1,8 +1,11 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - apps/*
+  - packages/*
+
 onlyBuiltDependencies:
-  - "@prisma/client"
-  - "@prisma/engines"
-  - prisma
+  - '@prisma/client'
+  - '@prisma/engines'
   - esbuild
+  - msgpackr-extract
+  - prisma
+  - sharp
