@@ -1,18 +1,7 @@
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
-
-const OVERVIEW_MODEL = "anthropic/claude-haiku-4-5";
-
-let client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!client) {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
-    client = new OpenAI({ baseURL: "https://openrouter.ai/api/v1", apiKey });
-  }
-  return client;
-}
+import { DEFAULT_MODEL } from "@persona-lab/shared";
 
 interface Finding {
   issue: string;
@@ -45,6 +34,7 @@ export async function GET(
   const run = await prisma.run.findUnique({
     where: { id: runId },
     select: {
+      overview: true,
       reportJson: true,
       flow: { select: { name: true, mode: true } },
     },
@@ -53,6 +43,13 @@ export async function GET(
   if (!run?.reportJson) {
     return new Response(JSON.stringify({ error: "Report not found" }), {
       status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // Return cached overview if available
+  if (run.overview) {
+    return new Response(JSON.stringify({ overview: run.overview }), {
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -92,15 +89,28 @@ ${findingLines}
 
 Write the summary paragraph now:`;
 
-  const openai = getClient();
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: "OPENROUTER_API_KEY not set" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const openai = new OpenAI({ baseURL: "https://openrouter.ai/api/v1", apiKey });
+
   const res = await openai.chat.completions.create({
-    model: OVERVIEW_MODEL,
+    model: DEFAULT_MODEL,
     messages: [{ role: "user", content: prompt }],
     temperature: 0.3,
     max_tokens: 300,
   });
 
   const overview = res.choices[0]?.message?.content?.trim() ?? "";
+
+  if (overview) {
+    await prisma.run.update({ where: { id: runId }, data: { overview } });
+  }
 
   return new Response(JSON.stringify({ overview }), {
     headers: { "Content-Type": "application/json" },

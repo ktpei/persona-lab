@@ -119,6 +119,7 @@ export default function RunDetail() {
   const [episodeSteps, setEpisodeSteps] = useState<Map<string, StepData[]>>(new Map());
   const [loadingSteps, setLoadingSteps] = useState<Set<string>>(new Set());
   const [overview, setOverview] = useState<string | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
 
   const loadRun = useCallback(() => {
     fetch(`/api/runs/${runId}`)
@@ -141,10 +142,12 @@ export default function RunDetail() {
     fetch(`/api/runs/${runId}/report`)
       .then((r) => r.json())
       .then((data) => setReport(data.report));
+    setOverviewLoading(true);
     fetch(`/api/runs/${runId}/overview`)
       .then((r) => r.json())
       .then((data) => setOverview(data.overview ?? null))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setOverviewLoading(false));
   }, [run?.status, runId]);
 
   async function togglePersonaExpand(personaId: string, episodeId: string) {
@@ -294,11 +297,11 @@ export default function RunDetail() {
           </section>
 
           {/* AI overview */}
-          {(overview !== null || report.findings.length > 0) && (
+          {(overviewLoading || overview) && (
             <section>
               <SectionHeader icon={FileText} label="Overview" />
               <div className="border border-border/50 rounded bg-card p-4">
-                {overview === null ? (
+                {overviewLoading ? (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <div className="h-3 w-3 animate-spin rounded-full border border-primary border-r-transparent" />
                     Generating summary...
