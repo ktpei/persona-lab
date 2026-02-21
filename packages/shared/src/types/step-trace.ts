@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Action } from "./action.js";
+import { Action, BrowserAction } from "./action.js";
 
 export const Confusion = z.object({
   issue: z.string(),
@@ -20,3 +20,17 @@ export const ReasoningOutput = z.object({
 });
 
 export type ReasoningOutput = z.infer<typeof ReasoningOutput>;
+
+// Agent-mode reasoning output — includes concrete browser action + abstract intent
+export const AgentReasoningOutput = z.object({
+  salient: z.string(),
+  confusions: z.array(Confusion),
+  browserAction: BrowserAction,
+  intent: Action,
+  confidence: z.number().min(0).max(1),
+  friction: z.number().min(0).max(1),
+  dropoffRisk: z.number().min(0).max(1),
+  memoryUpdate: z.string().optional(),
+});
+
+export type AgentReasoningOutput = z.infer<typeof AgentReasoningOutput>;

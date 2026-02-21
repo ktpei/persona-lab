@@ -1,47 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   BatchGenerateInput,
+  PERSONA_GROUPS,
   DEMOGRAPHIC_PRESETS,
-  SUBGROUP_TAGS,
-  applySubgroupModifiers,
-  generateArchetype,
 } from "@persona-lab/shared";
-import type { GeneratedPersonaType, SubgroupTagType } from "@persona-lab/shared";
+import type { GeneratedPersonaType, PersonaArchetypeType } from "@persona-lab/shared";
 import { generateNames } from "@/lib/llm";
 
 function sampleInRange(min: number, max: number): number {
   return +(min + Math.random() * (max - min)).toFixed(2);
 }
 
+const AGE_GROUPS = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"] as const;
+const GENDERS = ["male", "female", "non-binary"] as const;
+
+function randomAgeGroup(): typeof AGE_GROUPS[number] {
+  return AGE_GROUPS[Math.floor(Math.random() * AGE_GROUPS.length)];
+}
+
+function randomGender(): typeof GENDERS[number] {
+  return GENDERS[Math.floor(Math.random() * GENDERS.length)];
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const input = BatchGenerateInput.parse(body);
 
-  const preset = DEMOGRAPHIC_PRESETS.find((p) => p.id === input.presetId);
-  if (!preset) {
-    return NextResponse.json({ error: "Unknown preset" }, { status: 400 });
-  }
+  // Collect all archetypes from selected groups, filter out disabled ones
+  const disabledSet = new Set(input.disabledArchetypeIds ?? []);
+  const archetypePool: { archetype: PersonaArchetypeType; groupId: string }[] = [];
 
-  // Resolve subgroup tags
-  const resolvedTags: SubgroupTagType[] = [];
-  if (input.subgroupTagIds?.length) {
-    for (const tagId of input.subgroupTagIds) {
-      const found = SUBGROUP_TAGS.find((t) => t.id === tagId);
-      if (found) resolvedTags.push(found);
+  for (const groupId of input.groupIds) {
+    const group = PERSONA_GROUPS.find((g) => g.id === groupId);
+    if (!group) continue;
+    for (const arch of group.archetypes) {
+      if (!disabledSet.has(arch.id)) {
+        archetypePool.push({ archetype: arch, groupId });
+      }
     }
   }
-  if (input.customSubgroups?.length) {
-    resolvedTags.push(...input.customSubgroups);
+
+  if (archetypePool.length === 0) {
+    return NextResponse.json(
+      { error: "No archetypes available after filtering" },
+      { status: 400 },
+    );
   }
 
-  // Apply subgroup modifiers to trait ranges
-  const modifiedRanges = resolvedTags.length > 0
-    ? applySubgroupModifiers(preset.traitRanges, resolvedTags)
-    : preset.traitRanges;
-
-  // Generate archetype text
-  const subgroupLabels = resolvedTags.map((t) => t.label);
-  const archetype = generateArchetype(modifiedRanges, subgroupLabels);
+  // Round-robin distribute count across archetypes
+  const assignments: { archetype: PersonaArchetypeType; groupId: string }[] = [];
+  for (let i = 0; i < input.count; i++) {
+    assignments.push(archetypePool[i % archetypePool.length]);
+  }
 
   // Generate names via LLM
   let names: string[];
@@ -54,21 +64,34 @@ export async function POST(req: NextRequest) {
     names.push(`Persona ${names.length + 1}`);
   }
 
-  const personas: GeneratedPersonaType[] = names.map((name) => ({
-    name,
-    ageGroup: preset.ageGroup as GeneratedPersonaType["ageGroup"],
-    gender: preset.gender as GeneratedPersonaType["gender"],
-    traits: {
-      patience: sampleInRange(...modifiedRanges.patience),
-      exploration: sampleInRange(...modifiedRanges.exploration),
-      frustrationSensitivity: sampleInRange(...modifiedRanges.frustrationSensitivity),
-      forgiveness: sampleInRange(...modifiedRanges.forgiveness),
-      helpSeeking: sampleInRange(...modifiedRanges.helpSeeking),
-    },
-    accessibilityNeeds: [],
-    subgroupTags: subgroupLabels.length > 0 ? subgroupLabels : undefined,
-    archetype: archetype || undefined,
-  }));
+  const personas: GeneratedPersonaType[] = assignments.map(({ archetype, groupId }, i) => {
+    // Determine demographics: 70% archetype default, 30% random
+    let ageGroup: string;
+    let gender: string;
+    if (archetype.demographicDefaults && Math.random() < 0.7) {
+      ageGroup = archetype.demographicDefaults.ageGroup;
+      gender = archetype.demographicDefaults.gender;
+    } else {
+      ageGroup = randomAgeGroup();
+      gender = randomGender();
+    }
+
+    return {
+      name: names[i],
+      ageGroup: ageGroup as GeneratedPersonaType["ageGroup"],
+      gender: gender as GeneratedPersonaType["gender"],
+      traits: {
+        patience: sampleInRange(...archetype.traitRanges.patience),
+        exploration: sampleInRange(...archetype.traitRanges.exploration),
+        frustrationSensitivity: sampleInRange(...archetype.traitRanges.frustrationSensitivity),
+        forgiveness: sampleInRange(...archetype.traitRanges.forgiveness),
+        helpSeeking: sampleInRange(...archetype.traitRanges.helpSeeking),
+      },
+      accessibilityNeeds: [],
+      archetype: archetype.label,
+      groupId,
+    };
+  });
 
   return NextResponse.json(personas);
 }

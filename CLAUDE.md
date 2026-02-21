@@ -30,6 +30,7 @@ pnpm --filter @persona-lab/web build   # Production build (typecheck included)
 - **Icons**: Use `lucide-react` for all icons
 - **State**: Client-side fetch in `useEffect` — no server components with data fetching yet
 - **Patterns**: Inter font, 0.25rem radius (sharp edges), filled-bg tabs, dashed borders for empty states, uppercase tracking-widest section labels, no shadows, text-[15px] for body text, text-2xl for headings
+- **UI/UX guidelines**: See `.claude/uiux.md` for detailed design system rules, modern design principles, component patterns, and interaction standards
 
 ## File structure (web app)
 
