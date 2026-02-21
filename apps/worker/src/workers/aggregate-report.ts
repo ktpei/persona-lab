@@ -83,9 +83,44 @@ export async function handleAggregateReport(job: AggregateReportJob) {
   // Also track per-screen friction/dropoff across all episodes
   const screenStepsMap = new Map<number, { friction: number; dropoffRisk: number; confusionCount: number }[]>();
 
+  // Determine if this is an agent-mode run by checking if any step lacks a frame
+  const isAgentMode = run.episodes.some((ep) => ep.steps.some((s) => !s.frame));
+
+  // For agent mode: build URL → screen index mapping
+  const urlToScreenIndex = new Map<string, number>();
+  let nextScreenIndex = 0;
+
+  function getScreenIndex(step: { frame: { stepIndex: number } | null; observation: unknown }): number {
+    if (step.frame) return step.frame.stepIndex;
+    // Agent mode: derive from URL pathname
+    const obs = step.observation as { url?: string } | null;
+    const url = obs?.url ?? "unknown";
+    try {
+      const pathname = new URL(url).pathname;
+      if (!urlToScreenIndex.has(pathname)) {
+        urlToScreenIndex.set(pathname, nextScreenIndex++);
+      }
+      return urlToScreenIndex.get(pathname)!;
+    } catch {
+      if (!urlToScreenIndex.has(url)) {
+        urlToScreenIndex.set(url, nextScreenIndex++);
+      }
+      return urlToScreenIndex.get(url)!;
+    }
+  }
+
+  // Build reverse mapping for screen labels (for agent mode findings)
+  function getScreenUrl(screenIndex: number): string | undefined {
+    if (!isAgentMode) return undefined;
+    for (const [url, idx] of urlToScreenIndex) {
+      if (idx === screenIndex) return url;
+    }
+    return undefined;
+  }
+
   for (const episode of run.episodes) {
     for (const step of episode.steps) {
-      const screenIndex = step.frame.stepIndex;
+      const screenIndex = getScreenIndex(step);
 
       const reasoning = step.reasoning as {
         confusions?: Array<{
@@ -230,6 +265,7 @@ Respond as JSON:
         affectedPersonas: f.affectedPersonas,
         elementRef: f.elementRef,
         stepIndex: f.stepIndex,
+        screenUrl: getScreenUrl(f.screenIndex),
         recommendedFix: f.recommendedFix,
       },
     });
@@ -259,7 +295,7 @@ Respond as JSON:
     const confusions: Array<{ issue: string; evidence: string; stepIndex: number; screenIndex?: number }> = [];
 
     for (const step of steps) {
-      const screenIdx = step.frame.stepIndex;
+      const screenIdx = getScreenIndex(step);
       const reasoning = step.reasoning as {
         confusions?: Array<{ issue: string; evidence: string }>;
       };
@@ -316,6 +352,7 @@ Respond as JSON:
 
       return {
         screenIndex,
+        screenLabel: getScreenUrl(screenIndex),
         avgFriction: avgScreenFriction,
         maxFriction: maxScreenFriction,
         avgDropoffRisk: avgScreenDropoff,
