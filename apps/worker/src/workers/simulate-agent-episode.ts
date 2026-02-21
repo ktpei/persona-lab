@@ -147,10 +147,12 @@ Analyze this page critically. Identify friction points, confusions, and obstacle
 
 IMPORTANT: The screenshot and element list only show what is currently visible in the viewport. If the page is taller than the viewport, there is more content above or below that you haven't seen yet. Check the scroll position above — if you haven't seen the full page and can't find what you need, SCROLL DOWN before concluding something is missing.
 
+MANDATORY: You are FORBIDDEN from choosing "done" with success=false if there is unseen content below the viewport. You MUST scroll down to view the entire page before giving up. If the scroll position shows you are not at the bottom, your next action MUST be "scroll" with direction "down".
+
 Pick ONE concrete browser action to execute:
 - click: click an interactive element by index number. Requires: { "type": "click", "elementIndex": <number> }
 - click_coordinates: click a specific x,y position (only if no element matches). Requires: { "type": "click_coordinates", "x": <number>, "y": <number> }
-- type: type text into an input field. Requires: { "type": "type", "elementIndex": <number>, "text": "<string>" }
+- type: type text into an input field. Requires: { "type": "type", "elementIndex": <number>, "text": "<string>", "submit": true|false }. Set "submit": true to press Enter after typing — useful for search bars and forms that have no visible submit button. If there IS a visible search/submit button you want to click, set "submit": false and click the button as a separate action.
 - scroll: scroll to see more content. Requires: { "type": "scroll", "direction": "up" | "down" }
 - navigate_back: go back to the previous page. Requires: { "type": "navigate_back" }
 - wait: wait for the page to load. Requires: { "type": "wait", "reason": "<string>" }
@@ -197,22 +199,22 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
   let prevUrl = "";
   let stuckCount = 0;
 
-  const useDocker = process.env.BROWSER_MODE === "docker";
-  const container = useDocker ? new BrowserContainer() : null;
+  const skipDocker = process.env.BROWSER_MODE === "local";
+  const container = skipDocker ? null : new BrowserContainer();
   const session = new BrowserSession();
 
   try {
     if (container) {
-      // Production: Docker-isolated browser per episode
+      // Docker-isolated browser per episode (default)
       console.log(`${tag} Starting Docker browser container...`);
       await container.start();
       const endpoint = container.getEndpoint();
       console.log(`${tag} Container ready at ${endpoint}`);
       await session.connect(endpoint);
     } else {
-      // Local dev: direct Playwright launch (no Docker needed)
-      console.log(`${tag} Launching browser...`);
-      await session.launch();
+      // Local dev fallback: direct Playwright launch (BROWSER_MODE=local)
+      console.log(`${tag} Launching local browser (no Docker)...`);
+      await session.launch({ headless: false });
       console.log(`${tag} Browser ready`);
     }
 
@@ -315,6 +317,18 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         memory = memory
           ? `${memory}\n${reasoning.memoryUpdate}`
           : reasoning.memoryUpdate;
+      }
+
+      // Guard: prevent premature abandonment if page hasn't been fully viewed
+      if (reasoning.browserAction.type === "done" && !reasoning.browserAction.success) {
+        const bottomEdge = scrollInfo.scrollY + scrollInfo.viewportHeight;
+        const hasSeenBottom = bottomEdge >= scrollInfo.pageHeight - 50;
+        if (!hasSeenBottom) {
+          const unseen = scrollInfo.pageHeight - bottomEdge;
+          console.log(`${tag} Step ${stepIdx}: agent wants to abandon but ${unseen}px unseen below — forcing scroll`);
+          await session.executeAction({ type: "scroll", direction: "down" as const }, elements);
+          continue;
+        }
       }
 
       // Check if done

@@ -13,9 +13,9 @@ export class BrowserSession {
    * Launch a local headless Chromium instance directly via Playwright.
    * No Docker required — ideal for local development.
    */
-  async launch(): Promise<void> {
+  async launch(options?: { headless?: boolean }): Promise<void> {
     this.browser = await chromium.launch({
-      headless: true,
+      headless: options?.headless ?? true,
       args: [
         "--disable-gpu",
         "--disable-dev-shm-usage",
@@ -95,6 +95,10 @@ export class BrowserSession {
         await page.keyboard.press("Meta+A");
         await page.keyboard.press("Backspace");
         await page.keyboard.type(action.text, { delay: 30 });
+        if (action.submit) {
+          await page.keyboard.press("Enter");
+          await this.waitForSettle();
+        }
         break;
       }
 
