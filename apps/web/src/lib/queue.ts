@@ -13,6 +13,7 @@ function getRedisOpts() {
 
 let _parseFrameQueue: Queue | null = null;
 let _simulateEpisodeQueue: Queue | null = null;
+let _simulateAgentEpisodeQueue: Queue | null = null;
 let _aggregateReportQueue: Queue | null = null;
 
 export const parseFrameQueue = {
@@ -30,6 +31,15 @@ export const simulateEpisodeQueue = {
       _simulateEpisodeQueue = new Queue(QUEUE_NAMES.SIMULATE_EPISODE, { connection: getRedisOpts() });
     }
     return _simulateEpisodeQueue.add(...args);
+  },
+};
+
+export const simulateAgentEpisodeQueue = {
+  add: async (...args: Parameters<Queue["add"]>) => {
+    if (!_simulateAgentEpisodeQueue) {
+      _simulateAgentEpisodeQueue = new Queue(QUEUE_NAMES.SIMULATE_AGENT_EPISODE, { connection: getRedisOpts() });
+    }
+    return _simulateAgentEpisodeQueue.add(...args);
   },
 };
 

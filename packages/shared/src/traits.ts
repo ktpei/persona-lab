@@ -1,4 +1,3 @@
-import type { TraitModifiers as TraitModifiersType, SubgroupTag as SubgroupTagType } from "./types/persona.js";
 import type { TraitRange } from "./constants.js";
 
 const TRAIT_KEYS = [
@@ -11,40 +10,12 @@ const TRAIT_KEYS = [
 
 type TraitKey = (typeof TRAIT_KEYS)[number];
 
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, v));
-}
-
 /**
- * Stack subgroup modifiers additively onto a base trait range, clamping to [0, 1].
- */
-export function applySubgroupModifiers(
-  baseRanges: TraitRange,
-  subgroups: SubgroupTagType[],
-): TraitRange {
-  const result = { ...baseRanges } as Record<TraitKey, [number, number]>;
-
-  for (const key of TRAIT_KEYS) {
-    let [lo, hi] = baseRanges[key];
-    for (const sg of subgroups) {
-      const mod = (sg.modifiers as TraitModifiersType)[key];
-      if (mod !== undefined) {
-        lo += mod;
-        hi += mod;
-      }
-    }
-    result[key] = [clamp(lo, 0, 1), clamp(hi, 0, 1)];
-  }
-
-  return result as TraitRange;
-}
-
-/**
- * Generate an archetype one-liner from combined trait ranges and subgroup labels.
+ * Generate an archetype one-liner from trait ranges and the archetype label.
  */
 export function generateArchetype(
   ranges: TraitRange,
-  subgroupLabels: string[],
+  archetypeLabel: string,
 ): string {
   const descriptors: string[] = [];
 
@@ -55,9 +26,7 @@ export function generateArchetype(
   }
 
   const traitText = descriptors.filter(Boolean).join(", ");
-  const tagText = subgroupLabels.length > 0 ? ` (${subgroupLabels.join(", ")})` : "";
-
-  return traitText + tagText;
+  return archetypeLabel ? `${archetypeLabel}: ${traitText}` : traitText;
 }
 
 function traitDescriptor(key: TraitKey, value: number): string {

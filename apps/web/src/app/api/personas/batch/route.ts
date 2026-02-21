@@ -12,8 +12,8 @@ const BatchSaveInput = z.object({
       gender: Gender,
       traits: PersonaTraits,
       accessibilityNeeds: z.array(z.string()),
-      subgroupTags: z.array(z.string()).optional(),
-      archetype: z.string().optional(),
+      archetype: z.string(),
+      groupId: z.string(),
     })
   ),
 });
@@ -33,8 +33,8 @@ export async function POST(req: NextRequest) {
           traits: {
             ...p.traits,
             accessibilityNeeds: p.accessibilityNeeds,
-            ...(p.subgroupTags && { subgroupTags: p.subgroupTags }),
-            ...(p.archetype && { archetype: p.archetype }),
+            archetype: p.archetype,
+            groupId: p.groupId,
           },
         },
       })
