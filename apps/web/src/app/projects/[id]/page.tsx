@@ -31,7 +31,9 @@ import {
   Trash2,
   Check,
   AlertTriangle,
+  Mic,
 } from "lucide-react";
+import { VoiceSessionPanel } from "@/components/voice/VoiceSessionPanel";
 
 // ---------- Interfaces ----------
 
@@ -100,6 +102,9 @@ export default function ProjectDetail() {
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [maxSteps, setMaxSteps] = useState(30);
   const [submitting, setSubmitting] = useState(false);
+
+  // Voice session
+  const [voiceSessionOpen, setVoiceSessionOpen] = useState(false);
 
   useEffect(() => {
     fetch(`/api/projects`)
@@ -209,6 +214,14 @@ export default function ProjectDetail() {
           >
             <Trash2 className="h-3.5 w-3.5" />
             Delete
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2 border-dashed border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
+            onClick={() => setVoiceSessionOpen(true)}
+          >
+            <Mic className="h-3.5 w-3.5" />
+            Start Voice Session
           </Button>
           <Button
             variant="outline"
@@ -438,6 +451,22 @@ export default function ProjectDetail() {
                 {deleting ? "Deleting..." : "Delete Project"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== Voice Session Dialog ===== */}
+      <Dialog open={voiceSessionOpen} onOpenChange={setVoiceSessionOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Voice Session</DialogTitle>
+          </DialogHeader>
+          <div className="pt-2">
+            <VoiceSessionPanel
+              personas={personas.map((p) => ({ id: p.id, name: p.name }))}
+              flows={flows.map((f) => ({ id: f.id, name: f.name, _count: f._count }))}
+              onClose={() => setVoiceSessionOpen(false)}
+            />
           </div>
         </DialogContent>
       </Dialog>
