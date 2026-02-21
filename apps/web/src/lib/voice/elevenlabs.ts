@@ -24,6 +24,47 @@ export function getVoiceIdForPersona(traits: Record<string, number> | null): str
   return PERSONA_VOICE_MAP.analytical;
 }
 
+/**
+ * Convert speech to text using ElevenLabs Speech-to-Text API
+ */
+export async function speechToText(audioBuffer: ArrayBuffer): Promise<string> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    throw new Error("ELEVENLABS_API_KEY is not set");
+  }
+
+  const url = `${ELEVENLABS_BASE}/speech-to-text`;
+  
+  // Create a blob from the audio buffer
+  const blob = new Blob([audioBuffer], { type: 'audio/webm' });
+  
+  const formData = new FormData();
+  formData.append('audio', blob);
+  formData.append('model_id', 'whisper_large_v3');
+  formData.append('language', 'eng');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ElevenLabs STT failed: ${response.status} ${errorText}`);
+  }
+
+  const result = await response.json();
+  
+  if (!result.text) {
+    throw new Error('No transcription returned from ElevenLabs');
+  }
+
+  return result.text;
+}
+
 export interface StreamTTSOptions {
   text: string;
   voiceId?: string;
@@ -79,4 +120,27 @@ export async function* streamTTS(options: StreamTTSOptions): AsyncGenerator<Uint
   } finally {
     reader.releaseLock();
   }
+}
+
+/**
+ * Non-streaming TTS for simple use cases
+ */
+export async function textToSpeech(text: string, voiceId?: string): Promise<ArrayBuffer> {
+  const chunks: Uint8Array[] = [];
+  
+  for await (const chunk of streamTTS({ text, voiceId })) {
+    chunks.push(chunk);
+  }
+  
+  // Combine all chunks into a single ArrayBuffer
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  
+  return result.buffer;
 }

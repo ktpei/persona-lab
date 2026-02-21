@@ -4,7 +4,14 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { PersonaChat } from "@/components/persona-chat";
-import { AlertTriangle, TrendingDown, Eye, MessageCircle } from "lucide-react";
+import { VoiceSessionPanel } from "@/components/voice/VoiceSessionPanel";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { AlertTriangle, TrendingDown, Eye, MessageCircle, Phone } from "lucide-react";
 
 interface Episode {
   id: string;
@@ -96,6 +103,9 @@ export default function RunDetail() {
   const [run, setRun] = useState<Run | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [chatEpisode, setChatEpisode] = useState<{ id: string; personaName: string } | null>(null);
+  const [voiceSessionOpen, setVoiceSessionOpen] = useState(false);
+  const [personas, setPersonas] = useState<any[]>([]);
+  const [flows, setFlows] = useState<any[]>([]);
 
   const loadRun = useCallback(() => {
     fetch(`/api/runs/${runId}`)
@@ -106,6 +116,19 @@ export default function RunDetail() {
   useEffect(() => {
     loadRun();
   }, [loadRun]);
+
+  useEffect(() => {
+    if (!params.id) return;
+    
+    // Fetch personas and flows for the project
+    Promise.all([
+      fetch(`/api/projects/${params.id}/personas`).then(r => r.json()),
+      fetch(`/api/projects/${params.id}/flows`).then(r => r.json())
+    ]).then(([personasData, flowsData]) => {
+      setPersonas(personasData);
+      setFlows(flowsData);
+    });
+  }, [params.id]);
 
   useEffect(() => {
     if (!run || run.status === "COMPLETED" || run.status === "FAILED") return;
@@ -176,13 +199,23 @@ export default function RunDetail() {
               </div>
               <div className="flex items-center gap-2">
                 {run.status === "COMPLETED" && (
-                  <button
-                    onClick={() => setChatEpisode({ id: ep.id, personaName: ep.persona.name })}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                  >
-                    <MessageCircle className="w-3 h-3" />
-                    Chat
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setChatEpisode({ id: ep.id, personaName: ep.persona.name })}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      Chat
+                    </button>
+                    <button
+                      onClick={() => setVoiceSessionOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
+                      title="Talk through this run using voice"
+                    >
+                      <Phone className="w-3 h-3" />
+                      Voice
+                    </button>
+                  </>
                 )}
                 <StatusPill status={ep.status} />
                 {ep.status === "ABANDONED" && (
@@ -366,13 +399,23 @@ export default function RunDetail() {
                       <span className="text-[15px] font-medium text-foreground">{pp.personaName}</span>
                       <div className="flex items-center gap-2">
                         {episode && (
-                          <button
-                            onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                          >
-                            <MessageCircle className="w-3 h-3" />
-                            Chat
-                          </button>
+                          <>
+                            <button
+                              onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            >
+                              <MessageCircle className="w-3 h-3" />
+                              Chat
+                            </button>
+                            <button
+                              onClick={() => setVoiceSessionOpen(true)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
+                              title="Talk through this run using voice"
+                            >
+                              <Phone className="w-3 h-3" />
+                              Voice
+                            </button>
+                          </>
                         )}
                         <StatusPill status={pp.episodeStatus} />
                         {pp.episodeStatus === "ABANDONED" && (
@@ -418,6 +461,23 @@ export default function RunDetail() {
           personaName={chatEpisode.personaName}
           onClose={() => setChatEpisode(null)}
         />
+      )}
+
+      {voiceSessionOpen && (
+        <Dialog open={voiceSessionOpen} onOpenChange={setVoiceSessionOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Voice Session</DialogTitle>
+            </DialogHeader>
+            <div className="pt-2">
+              <VoiceSessionPanel
+                personas={personas.map((p: any) => ({ id: p.id, name: p.name }))}
+                flows={flows.map((f: any) => ({ id: f.id, name: f.name, _count: f._count }))}
+                onClose={() => setVoiceSessionOpen(false)}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
