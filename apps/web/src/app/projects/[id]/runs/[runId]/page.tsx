@@ -1,21 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { PersonaChat } from "@/components/persona-chat";
 import {
   AlertTriangle,
-  TrendingDown,
-  Eye,
   MessageCircle,
   ChevronRight,
   Globe,
-  Lightbulb,
   Users,
   BarChart3,
-  ArrowRight,
   ChevronDown,
+  FileText,
 } from "lucide-react";
 
 interface Episode {
@@ -46,17 +43,6 @@ interface Finding {
   recommendedFix?: string;
 }
 
-interface ScreenStats {
-  screenIndex: number;
-  screenLabel?: string;
-  avgFriction: number;
-  maxFriction: number;
-  avgDropoffRisk: number;
-  confusionCount: number;
-  findingCount: number;
-  totalSteps: number;
-}
-
 interface Report {
   summary: {
     totalEpisodes: number;
@@ -66,7 +52,16 @@ interface Report {
     avgDropoffRisk: number;
   };
   findings: Finding[];
-  perScreen?: ScreenStats[];
+  perScreen?: Array<{
+    screenIndex: number;
+    screenLabel?: string;
+    avgFriction: number;
+    maxFriction: number;
+    avgDropoffRisk: number;
+    confusionCount: number;
+    findingCount: number;
+    totalSteps: number;
+  }>;
   perPersona: Array<{
     personaId: string;
     personaName: string;
@@ -76,6 +71,18 @@ interface Report {
     stepsCount: number;
     confusions: Array<{ issue: string; evidence: string; stepIndex: number; screenIndex?: number }>;
   }>;
+}
+
+interface StepData {
+  stepId: string;
+  stepIndex: number;
+  screenLabel: string;
+  friction: number;
+  confidence: number;
+  dropoffRisk: number;
+  salient?: string;
+  action?: string;
+  confusions: Array<{ issue: string; evidence: string }>;
 }
 
 function frictionColor(value: number): string {
@@ -90,10 +97,10 @@ function frictionBg(value: number): string {
   return "bg-emerald-400";
 }
 
-function frictionBorder(value: number): string {
-  if (value >= 0.6) return "border-red-400/60";
-  if (value >= 0.3) return "border-amber-400/60";
-  return "border-emerald-400/60";
+function frictionChipClass(value: number): string {
+  if (value >= 0.6) return "bg-red-400/15 text-red-400 border-red-400/30";
+  if (value >= 0.3) return "bg-amber-400/15 text-amber-400 border-amber-400/30";
+  return "bg-emerald-400/15 text-emerald-400 border-emerald-400/30";
 }
 
 function severityLabel(value: number): string {
@@ -108,8 +115,10 @@ export default function RunDetail() {
   const [run, setRun] = useState<Run | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [chatEpisode, setChatEpisode] = useState<{ id: string; personaName: string } | null>(null);
-  const [screenShots, setScreenShots] = useState<Map<number, string>>(new Map());
   const [expandedPersonas, setExpandedPersonas] = useState<Set<string>>(new Set());
+  const [episodeSteps, setEpisodeSteps] = useState<Map<string, StepData[]>>(new Map());
+  const [loadingSteps, setLoadingSteps] = useState<Set<string>>(new Set());
+  const [overview, setOverview] = useState<string | null>(null);
 
   const loadRun = useCallback(() => {
     fetch(`/api/runs/${runId}`)
@@ -132,62 +141,38 @@ export default function RunDetail() {
     fetch(`/api/runs/${runId}/report`)
       .then((r) => r.json())
       .then((data) => setReport(data.report));
-    fetch(`/api/runs/${runId}/screenshots`)
+    fetch(`/api/runs/${runId}/overview`)
       .then((r) => r.json())
-      .then((data) => {
-        const map = new Map<number, string>();
-        for (const s of data.screens ?? []) {
-          map.set(s.screenIndex, s.stepId);
-        }
-        setScreenShots(map);
-      })
+      .then((data) => setOverview(data.overview ?? null))
       .catch(() => {});
   }, [run?.status, runId]);
 
-  const findingsByScreen = useMemo(() => {
-    if (!report) return new Map<number, Finding[]>();
-    const map = new Map<number, Finding[]>();
-    for (const f of report.findings) {
-      const screen = f.screenIndex ?? 0;
-      if (!map.has(screen)) map.set(screen, []);
-      map.get(screen)!.push(f);
-    }
-    return map;
-  }, [report]);
-
-  const screenStatsMap = useMemo(() => {
-    if (!report?.perScreen) return new Map<number, ScreenStats>();
-    const map = new Map<number, ScreenStats>();
-    for (const s of report.perScreen) map.set(s.screenIndex, s);
-    return map;
-  }, [report]);
-
-  const isAgentMode = run?.mode === "AGENT";
-
-  const screenLabels = useMemo(() => {
-    const map = new Map<number, string>();
-    if (report?.perScreen) {
-      for (const s of report.perScreen) {
-        if (s.screenLabel) map.set(s.screenIndex, s.screenLabel);
-      }
-    }
-    return map;
-  }, [report]);
-
-  const screenIndices = useMemo(() => {
-    const set = new Set<number>();
-    if (report?.perScreen) for (const s of report.perScreen) set.add(s.screenIndex);
-    for (const k of findingsByScreen.keys()) set.add(k);
-    return Array.from(set).sort((a, b) => a - b);
-  }, [report, findingsByScreen]);
-
-  function togglePersonaExpand(id: string) {
+  async function togglePersonaExpand(personaId: string, episodeId: string) {
+    const isCurrentlyExpanded = expandedPersonas.has(personaId);
     setExpandedPersonas((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(personaId)) next.delete(personaId);
+      else next.add(personaId);
       return next;
     });
+
+    // Lazily load steps on first expand
+    if (!isCurrentlyExpanded && !episodeSteps.has(episodeId) && !loadingSteps.has(episodeId)) {
+      setLoadingSteps((prev) => new Set(prev).add(episodeId));
+      try {
+        const res = await fetch(`/api/episodes/${episodeId}/steps`);
+        const data = await res.json();
+        setEpisodeSteps((prev) => new Map(prev).set(episodeId, data.steps));
+      } catch {
+        // silently ignore — steps just won't show
+      } finally {
+        setLoadingSteps((prev) => {
+          const next = new Set(prev);
+          next.delete(episodeId);
+          return next;
+        });
+      }
+    }
   }
 
   if (!run) {
@@ -204,6 +189,7 @@ export default function RunDetail() {
     );
   }
 
+  const isAgentMode = run.mode === "AGENT";
   const completionRate = report
     ? Math.round((report.summary.completedEpisodes / report.summary.totalEpisodes) * 100)
     : 0;
@@ -302,206 +288,38 @@ export default function RunDetail() {
               <StatCard
                 label="Findings"
                 value={report.findings.length}
-                sub={`across ${screenIndices.length} ${isAgentMode ? "pages" : "frames"}`}
+                sub="friction issues identified"
               />
             </div>
           </section>
 
-          {/* Friction by page — hero section */}
-          {report.perScreen && report.perScreen.length > 0 && (
+          {/* AI overview */}
+          {(overview !== null || report.findings.length > 0) && (
             <section>
-              <SectionHeader
-                icon={isAgentMode ? Globe : Eye}
-                label={isAgentMode ? "Friction by Page" : "Friction by Frame"}
-              />
-              <div className="border border-border/50 rounded bg-card p-5 overflow-x-auto">
-                <div className="flex items-start gap-2 min-w-min">
-                  {report.perScreen.map((s, idx) => {
-                    const stepId = screenShots.get(s.screenIndex);
-                    const screenFindings = findingsByScreen.get(s.screenIndex) ?? [];
-                    return (
-                      <div key={s.screenIndex} className="flex items-start">
-                        <div className="w-52 shrink-0">
-                          {/* Step number */}
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-[11px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                              {idx + 1}
-                            </span>
-                            <span className="text-xs text-muted-foreground truncate flex-1" title={s.screenLabel}>
-                              {s.screenLabel || `Frame ${s.screenIndex + 1}`}
-                            </span>
-                          </div>
-
-                          {/* Screenshot */}
-                          <div
-                            className={`rounded-sm overflow-hidden border-2 ${frictionBorder(s.avgFriction)} bg-muted aspect-[16/10] relative group`}
-                          >
-                            {stepId ? (
-                              <img
-                                src={`/api/steps/${stepId}/screenshot`}
-                                alt={s.screenLabel || `Frame ${s.screenIndex + 1}`}
-                                className="w-full h-full object-cover object-top"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Eye className="w-6 h-6 text-muted-foreground/30" />
-                              </div>
-                            )}
-                            {/* Friction overlay */}
-                            <div className="absolute top-1.5 right-1.5">
-                              <span
-                                className={`text-[11px] font-bold px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-sm ${frictionColor(s.avgFriction)}`}
-                              >
-                                {s.avgFriction.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Friction bar */}
-                          <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className={`h-full ${frictionBg(s.avgFriction)} rounded-full transition-all`}
-                              style={{ width: `${Math.max(s.avgFriction * 100, 3)}%` }}
-                            />
-                          </div>
-
-                          {/* Stats row */}
-                          <div className="flex items-center justify-between mt-1.5 text-[10px]">
-                            <div className="flex items-center gap-2">
-                              {s.confusionCount > 0 && (
-                                <span className="text-amber-400 flex items-center gap-0.5">
-                                  <AlertTriangle className="w-2.5 h-2.5" />
-                                  {s.confusionCount}
-                                </span>
-                              )}
-                              {screenFindings.length > 0 && (
-                                <span className="text-red-400 flex items-center gap-0.5">
-                                  <Eye className="w-2.5 h-2.5" />
-                                  {screenFindings.length}
-                                </span>
-                              )}
-                            </div>
-                            <span className={`flex items-center gap-0.5 ${frictionColor(s.avgDropoffRisk)}`}>
-                              <TrendingDown className="w-2.5 h-2.5" />
-                              {s.avgDropoffRisk.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Arrow connector */}
-                        {idx < report.perScreen!.length - 1 && (
-                          <div className="flex items-center px-1 pt-20">
-                            <ArrowRight className="w-4 h-4 text-border" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+              <SectionHeader icon={FileText} label="Overview" />
+              <div className="border border-border/50 rounded bg-card p-4">
+                {overview === null ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="h-3 w-3 animate-spin rounded-full border border-primary border-r-transparent" />
+                    Generating summary...
+                  </div>
+                ) : (
+                  <p className="text-[15px] text-muted-foreground leading-relaxed">{overview}</p>
+                )}
               </div>
             </section>
           )}
 
-          {/* Findings */}
-          <section>
-            <SectionHeader
-              icon={AlertTriangle}
-              label={`Findings (${report.findings.length})`}
-            />
-            {report.findings.length === 0 ? (
-              <div className="border border-dashed border-border/50 rounded py-12 text-center">
-                <AlertTriangle className="w-6 h-6 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-[15px] text-muted-foreground">No friction issues detected.</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {screenIndices.map((screenIdx) => {
-                  const screenFindings = findingsByScreen.get(screenIdx) ?? [];
-                  const stats = screenStatsMap.get(screenIdx);
-                  if (screenFindings.length === 0) return null;
-
-                  return (
-                    <div key={screenIdx}>
-                      {/* Screen header */}
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="flex items-center gap-2">
-                          {screenShots.has(screenIdx) && (
-                            <div className="w-6 h-4 rounded-sm overflow-hidden border border-border/50 shrink-0">
-                              <img
-                                src={`/api/steps/${screenShots.get(screenIdx)}/screenshot`}
-                                alt=""
-                                className="w-full h-full object-cover object-top"
-                              />
-                            </div>
-                          )}
-                          <span className="text-sm font-semibold text-foreground">
-                            {screenLabels.get(screenIdx) || `Frame ${screenIdx + 1}`}
-                          </span>
-                        </div>
-                        {stats && (
-                          <div className="flex items-center gap-3 text-xs">
-                            <span className={`flex items-center gap-1 ${frictionColor(stats.avgFriction)}`}>
-                              <AlertTriangle className="w-3 h-3" />
-                              {stats.avgFriction.toFixed(2)}
-                            </span>
-                            <span className={`flex items-center gap-1 ${frictionColor(stats.avgDropoffRisk)}`}>
-                              <TrendingDown className="w-3 h-3" />
-                              {stats.avgDropoffRisk.toFixed(2)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Finding cards */}
-                      <div className="space-y-2">
-                        {screenFindings.map((f, i) => (
-                          <div
-                            key={i}
-                            className={`border-l-2 ${frictionBorder(f.severity)} bg-card border border-border/40 rounded py-3 px-4`}
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[15px] font-medium text-foreground">{f.issue}</p>
-                                <p className="text-sm text-muted-foreground mt-1">{f.evidence}</p>
-                                {f.recommendedFix && (
-                                  <div className="flex items-start gap-1.5 mt-2 text-sm text-primary">
-                                    <Lightbulb className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                                    <span>{f.recommendedFix}</span>
-                                  </div>
-                                )}
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                  {f.affectedPersonas.map((p) => (
-                                    <Badge key={p} variant="outline" className="text-[11px] font-normal">
-                                      {p}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <div className={`text-lg font-bold tabular-nums ${frictionColor(f.severity)}`}>
-                                  {f.severity.toFixed(2)}
-                                </div>
-                                <div className="text-[11px] text-muted-foreground">{f.frequency}x reported</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
           {/* Per-Persona */}
           <section>
-            <SectionHeader icon={Users} label="Per-Persona Breakdown" />
-            <div className="grid gap-3 md:grid-cols-2">
+            <SectionHeader icon={Users} label="Personas" />
+            <div className="space-y-3">
               {report.perPersona.map((pp) => {
                 const episode = run.episodes.find((ep) => ep.persona.id === pp.personaId);
                 const isExpanded = expandedPersonas.has(pp.personaId);
+                const steps = episode ? episodeSteps.get(episode.id) : undefined;
+                const isLoading = episode ? loadingSteps.has(episode.id) : false;
+
                 return (
                   <div
                     key={pp.personaId}
@@ -509,92 +327,130 @@ export default function RunDetail() {
                   >
                     {/* Persona header */}
                     <div className="p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[15px] font-medium text-foreground">{pp.personaName}</span>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
+                          <span className="text-[15px] font-medium text-foreground shrink-0">{pp.personaName}</span>
                           {pp.episodeStatus === "ABANDONED" && (
-                            <span className="text-[11px] text-amber-400 font-medium">dropped off</span>
+                            <span className="text-[11px] text-amber-400 font-medium bg-amber-400/10 px-2 py-0.5 rounded shrink-0">
+                              dropped off
+                            </span>
                           )}
+                          {pp.episodeStatus === "COMPLETED" && (
+                            <span className="text-[11px] text-emerald-400 font-medium bg-emerald-400/10 px-2 py-0.5 rounded shrink-0">
+                              completed
+                            </span>
+                          )}
+                          {/* Friction bar */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-muted-foreground">Friction</span>
+                            <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${frictionBg(pp.avgFriction)} rounded-full`}
+                                style={{ width: `${Math.max(pp.avgFriction * 100, 3)}%` }}
+                              />
+                            </div>
+                            <span className={`text-xs font-semibold tabular-nums ${frictionColor(pp.avgFriction)}`}>
+                              {pp.avgFriction.toFixed(2)}
+                            </span>
+                          </div>
+                          {/* Confidence bar */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-muted-foreground">Conf.</span>
+                            <div className="w-12 h-1 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary/60 rounded-full"
+                                style={{ width: `${Math.max(pp.avgConfidence * 100, 3)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold tabular-nums text-foreground">
+                              {pp.avgConfidence.toFixed(2)}
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">{pp.stepsCount} steps</span>
                         </div>
+                        {/* Chat button */}
                         {episode && run.status === "COMPLETED" && (
                           <button
                             onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors shrink-0"
                           >
                             <MessageCircle className="w-3 h-3" />
                             Chat
                           </button>
                         )}
                       </div>
-
-                      {/* Stat row */}
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <div className="text-xs text-muted-foreground mb-0.5">Friction</div>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm font-semibold tabular-nums ${frictionColor(pp.avgFriction)}`}>
-                              {pp.avgFriction.toFixed(2)}
-                            </span>
-                            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${frictionBg(pp.avgFriction)} rounded-full`}
-                                style={{ width: `${Math.max(pp.avgFriction * 100, 3)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground mb-0.5">Confidence</div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold tabular-nums text-foreground">
-                              {pp.avgConfidence.toFixed(2)}
-                            </span>
-                            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-primary/60 rounded-full"
-                                style={{ width: `${Math.max(pp.avgConfidence * 100, 3)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground mb-0.5">Steps</div>
-                          <span className="text-sm font-semibold text-foreground">{pp.stepsCount}</span>
-                        </div>
-                      </div>
                     </div>
 
-                    {/* Confusions toggle */}
-                    {pp.confusions.length > 0 && (
-                      <>
-                        <button
-                          onClick={() => togglePersonaExpand(pp.personaId)}
-                          className="w-full flex items-center justify-between px-4 py-2 border-t border-border/40 text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <AlertTriangle className="w-3 h-3 text-amber-400" />
-                            {pp.confusions.length} confusion{pp.confusions.length !== 1 ? "s" : ""}
-                          </span>
-                          <ChevronDown
-                            className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                          />
-                        </button>
-                        {isExpanded && (
-                          <div className="border-t border-border/40 px-4 py-2 space-y-1.5 bg-muted/20">
-                            {pp.confusions.map((c, ci) => (
-                              <div key={ci} className="flex items-start gap-2 text-sm">
-                                <ChevronRight className="w-3 h-3 text-muted-foreground/50 mt-1 shrink-0" />
-                                <div>
-                                  <span className="text-muted-foreground/60 text-xs">
-                                    {screenLabels.get(c.screenIndex ?? 0) || `Frame ${(c.screenIndex ?? 0) + 1}`}
+                    {/* Toggle button */}
+                    <button
+                      onClick={() => episode && togglePersonaExpand(pp.personaId, episode.id)}
+                      className="w-full flex items-center justify-between px-4 py-2 border-t border-border/40 text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
+                    >
+                      <span>{isExpanded ? "Hide" : "Show"} journey ({pp.stepsCount} steps)</span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      />
+                    </button>
+
+                    {/* Expanded steps */}
+                    {isExpanded && (
+                      <div className="border-t border-border/40 bg-muted/10">
+                        {isLoading ? (
+                          <div className="flex items-center justify-center py-6">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-r-transparent" />
+                            <span className="ml-2 text-xs text-muted-foreground">Loading steps...</span>
+                          </div>
+                        ) : steps && steps.length > 0 ? (
+                          <div className="divide-y divide-border/30">
+                            {steps.map((step) => (
+                              <div key={step.stepIndex} className="px-4 py-3">
+                                <div className="flex items-start gap-3">
+                                  {/* Step number */}
+                                  <span className="text-[11px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0 mt-0.5 tabular-nums">
+                                    {step.stepIndex + 1}
                                   </span>
-                                  <p className="text-foreground/80">{c.issue}</p>
+                                  {/* Screenshot */}
+                                  <div className="w-24 h-16 shrink-0 rounded overflow-hidden border border-border/40 bg-muted">
+                                    <img
+                                      src={`/api/steps/${step.stepId}/screenshot`}
+                                      alt={step.screenLabel}
+                                      className="w-full h-full object-cover object-top"
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = "none";
+                                      }}
+                                    />
+                                  </div>
+                                  {/* Content */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-xs text-foreground/70 truncate">{step.screenLabel}</span>
+                                      <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${frictionChipClass(step.friction)} shrink-0`}>
+                                        {step.friction.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    {step.salient && (
+                                      <p className="text-xs text-muted-foreground line-clamp-2">{step.salient}</p>
+                                    )}
+                                    {step.confusions.length > 0 && (
+                                      <div className="mt-1.5 space-y-0.5">
+                                        {step.confusions.map((c, ci) => (
+                                          <div key={ci} className="flex items-start gap-1.5">
+                                            <ChevronRight className="w-3 h-3 text-amber-400/60 mt-0.5 shrink-0" />
+                                            <span className="text-[11px] text-amber-400/80">{c.issue}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             ))}
                           </div>
+                        ) : (
+                          <div className="py-4 text-center text-xs text-muted-foreground">No step data available.</div>
                         )}
-                      </>
+                      </div>
                     )}
                   </div>
                 );

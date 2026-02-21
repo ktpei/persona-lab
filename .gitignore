@@ -6,6 +6,5 @@ dist/
 *.tsbuildinfo
 uploads/
 prisma/*.db
-packages/shared/package.json
 .pnpm-store/
-
+packages/shared/package.json
