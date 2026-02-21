@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 import type { StorageProvider } from "@persona-lab/shared";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = process.env.UPLOAD_DIR
-  ? path.resolve(process.env.UPLOAD_DIR)
-  : path.resolve(__dirname, "../../../../web/uploads");
+// Always use web app's uploads dir so worker and web share the same files (no env mismatch)
+const repoRoot = path.resolve(__dirname, "../../../..");
+const UPLOAD_DIR = path.resolve(repoRoot, "apps/web/uploads");
 
 export class LocalStorageProvider implements StorageProvider {
   private baseDir: string;
