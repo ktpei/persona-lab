@@ -34,6 +34,7 @@ import {
   Mic,
 } from "lucide-react";
 import { VoiceSessionPanel } from "@/components/voice/VoiceSessionPanel";
+import { FocusGroupSession } from "@/components/voice/FocusGroupSession";
 
 // ---------- Interfaces ----------
 
@@ -105,6 +106,9 @@ export default function ProjectDetail() {
 
   // Voice session
   const [voiceSessionOpen, setVoiceSessionOpen] = useState(false);
+  
+  // Focus group session
+  const [focusGroupOpen, setFocusGroupOpen] = useState(false);
 
   useEffect(() => {
     fetch(`/api/projects`)
@@ -222,6 +226,14 @@ export default function ProjectDetail() {
           >
             <Mic className="h-3.5 w-3.5" />
             Start Voice Session
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2 border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
+            onClick={() => setFocusGroupOpen(true)}
+          >
+            <Users className="h-3.5 w-3.5" />
+            Start Focus Group Session
           </Button>
           <Button
             variant="outline"
@@ -466,6 +478,33 @@ export default function ProjectDetail() {
               personas={personas.map((p) => ({ id: p.id, name: p.name }))}
               flows={flows.map((f) => ({ id: f.id, name: f.name, _count: f._count }))}
               onClose={() => setVoiceSessionOpen(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== Focus Group Session Dialog ===== */}
+      <Dialog open={focusGroupOpen} onOpenChange={setFocusGroupOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Focus Group Session</DialogTitle>
+          </DialogHeader>
+          <div className="pt-2">
+            <FocusGroupSession
+              personas={personas.map((p) => ({ 
+                id: p.id, 
+                name: p.name,
+                traits: p.traits || {
+                  openness: 0.5,
+                  conscientiousness: 0.5,
+                  extraversion: 0.5,
+                  agreeableness: 0.5,
+                  neuroticism: 0.5
+                }
+              }))}
+              flows={flows.map((f) => ({ id: f.id, name: f.name, _count: f._count }))}
+              projectId={projectId}
+              onClose={() => setFocusGroupOpen(false)}
             />
           </div>
         </DialogContent>
