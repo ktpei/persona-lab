@@ -12,11 +12,14 @@
     "@persona-lab/shared": "workspace:*",
     "@prisma/client": "^6.2.0",
     "bullmq": "^5.20.0",
+    "dockerode": "^4.0.4",
     "dotenv": "^17.3.1",
     "openai": "^4.70.0",
+    "playwright-core": "^1.50.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/dockerode": "^3.3.31",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"

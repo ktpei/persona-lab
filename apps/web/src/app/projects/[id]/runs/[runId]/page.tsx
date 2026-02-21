@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { PersonaChat } from "@/components/persona-chat";
@@ -11,7 +11,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AlertTriangle, TrendingDown, Eye, MessageCircle, Phone } from "lucide-react";
+import {
+  AlertTriangle,
+  MessageCircle,
+  ChevronRight,
+  Globe,
+  Users,
+  BarChart3,
+  ChevronDown,
+  FileText,
+  Phone,
+} from "lucide-react";
 
 interface Episode {
   id: string;
@@ -23,6 +33,7 @@ interface Episode {
 interface Run {
   id: string;
   status: string;
+  mode: "SCREENSHOT" | "AGENT";
   createdAt: string;
   episodes: Episode[];
   _count: { findings: number };
@@ -40,16 +51,6 @@ interface Finding {
   recommendedFix?: string;
 }
 
-interface ScreenStats {
-  screenIndex: number;
-  avgFriction: number;
-  maxFriction: number;
-  avgDropoffRisk: number;
-  confusionCount: number;
-  findingCount: number;
-  totalSteps: number;
-}
-
 interface Report {
   summary: {
     totalEpisodes: number;
@@ -59,7 +60,16 @@ interface Report {
     avgDropoffRisk: number;
   };
   findings: Finding[];
-  perScreen?: ScreenStats[];
+  perScreen?: Array<{
+    screenIndex: number;
+    screenLabel?: string;
+    avgFriction: number;
+    maxFriction: number;
+    avgDropoffRisk: number;
+    confusionCount: number;
+    findingCount: number;
+    totalSteps: number;
+  }>;
   perPersona: Array<{
     personaId: string;
     personaName: string;
@@ -71,19 +81,17 @@ interface Report {
   }>;
 }
 
-const statusStyles: Record<string, string> = {
-  PENDING: "bg-muted text-muted-foreground",
-  RUNNING: "bg-primary/15 text-primary",
-  SIMULATING: "bg-primary/15 text-primary",
-  AGGREGATING: "bg-primary/15 text-primary",
-  COMPLETED: "bg-primary/15 text-primary",
-  ABANDONED: "bg-primary/15 text-primary",
-  FAILED: "bg-destructive/15 text-destructive",
-};
-
-const statusLabels: Record<string, string> = {
-  ABANDONED: "COMPLETED",
-};
+interface StepData {
+  stepId: string;
+  stepIndex: number;
+  screenLabel: string;
+  friction: number;
+  confidence: number;
+  dropoffRisk: number;
+  salient?: string;
+  action?: string;
+  confusions: Array<{ issue: string; evidence: string }>;
+}
 
 function frictionColor(value: number): string {
   if (value >= 0.6) return "text-red-400";
@@ -97,12 +105,28 @@ function frictionBg(value: number): string {
   return "bg-emerald-400";
 }
 
+function frictionChipClass(value: number): string {
+  if (value >= 0.6) return "bg-red-400/15 text-red-400 border-red-400/30";
+  if (value >= 0.3) return "bg-amber-400/15 text-amber-400 border-amber-400/30";
+  return "bg-emerald-400/15 text-emerald-400 border-emerald-400/30";
+}
+
+function severityLabel(value: number): string {
+  if (value >= 0.6) return "High";
+  if (value >= 0.3) return "Medium";
+  return "Low";
+}
+
 export default function RunDetail() {
   const params = useParams<{ id: string; runId: string }>();
   const { runId } = params;
   const [run, setRun] = useState<Run | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [chatEpisode, setChatEpisode] = useState<{ id: string; personaName: string } | null>(null);
+  const [expandedPersonas, setExpandedPersonas] = useState<Set<string>>(new Set());
+  const [episodeSteps, setEpisodeSteps] = useState<Map<string, StepData[]>>(new Map());
+  const [loadingSteps, setLoadingSteps] = useState<Set<string>>(new Set());
+  const [overview, setOverview] = useState<string | null>(null);
   const [voiceSessionOpen, setVoiceSessionOpen] = useState(false);
   const [personas, setPersonas] = useState<any[]>([]);
   const [flows, setFlows] = useState<any[]>([]);
@@ -141,310 +165,324 @@ export default function RunDetail() {
     fetch(`/api/runs/${runId}/report`)
       .then((r) => r.json())
       .then((data) => setReport(data.report));
+    fetch(`/api/runs/${runId}/overview`)
+      .then((r) => r.json())
+      .then((data) => setOverview(data.overview ?? null))
+      .catch(() => {});
   }, [run?.status, runId]);
 
-  // Group findings by screen
-  const findingsByScreen = useMemo(() => {
-    if (!report) return new Map<number, Finding[]>();
-    const map = new Map<number, Finding[]>();
-    for (const f of report.findings) {
-      const screen = f.screenIndex ?? 0;
-      if (!map.has(screen)) map.set(screen, []);
-      map.get(screen)!.push(f);
+  async function togglePersonaExpand(personaId: string, episodeId: string) {
+    const isCurrentlyExpanded = expandedPersonas.has(personaId);
+    setExpandedPersonas((prev) => {
+      const next = new Set(prev);
+      if (next.has(personaId)) next.delete(personaId);
+      else next.add(personaId);
+      return next;
+    });
+
+    // Lazily load steps on first expand
+    if (!isCurrentlyExpanded && !episodeSteps.has(episodeId) && !loadingSteps.has(episodeId)) {
+      setLoadingSteps((prev) => new Set(prev).add(episodeId));
+      try {
+        const res = await fetch(`/api/episodes/${episodeId}/steps`);
+        const data = await res.json();
+        setEpisodeSteps((prev) => new Map(prev).set(episodeId, data.steps));
+      } catch {
+        // silently ignore — steps just won't show
+      } finally {
+        setLoadingSteps((prev) => {
+          const next = new Set(prev);
+          next.delete(episodeId);
+          return next;
+        });
+      }
     }
-    return map;
-  }, [report]);
-
-  // Get screen stats map for quick lookup
-  const screenStatsMap = useMemo(() => {
-    if (!report?.perScreen) return new Map<number, ScreenStats>();
-    const map = new Map<number, ScreenStats>();
-    for (const s of report.perScreen) map.set(s.screenIndex, s);
-    return map;
-  }, [report]);
-
-  // Get all screen indices (union of perScreen and findingsByScreen keys)
-  const screenIndices = useMemo(() => {
-    const set = new Set<number>();
-    if (report?.perScreen) for (const s of report.perScreen) set.add(s.screenIndex);
-    for (const k of findingsByScreen.keys()) set.add(k);
-    return Array.from(set).sort((a, b) => a - b);
-  }, [report, findingsByScreen]);
+  }
 
   if (!run) {
-    return <p className="text-muted-foreground">Loading...</p>;
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="h-8 bg-muted rounded w-48" />
+        <div className="grid grid-cols-5 gap-px">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-20 bg-muted rounded" />
+          ))}
+        </div>
+        <div className="h-40 bg-muted rounded" />
+      </div>
+    );
   }
+
+  const isAgentMode = run.mode === "AGENT";
+  const completionRate = report
+    ? Math.round((report.summary.completedEpisodes / report.summary.totalEpisodes) * 100)
+    : 0;
 
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <h2 className="text-2xl font-bold text-foreground">Run {run.id.slice(0, 8)}</h2>
-        <StatusPill status={run.status} />
-      </div>
-
-      {/* Episodes */}
-      <section>
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
-          Episodes
-        </h3>
-        <div className="divide-y divide-border/40">
-          {run.episodes.map((ep) => (
-            <div key={ep.id} className="flex items-center justify-between py-3 px-1">
-              <div>
-                <span className="text-[15px] font-medium text-foreground">{ep.persona.name}</span>
-                <span className="ml-2 text-sm text-muted-foreground">
-                  {ep._count.steps} steps
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {run.status === "COMPLETED" && (
-                  <>
-                    <button
-                      onClick={() => setChatEpisode({ id: ep.id, personaName: ep.persona.name })}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                    >
-                      <MessageCircle className="w-3 h-3" />
-                      Chat
-                    </button>
-                    <button
-                      onClick={() => setVoiceSessionOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
-                      title="Talk through this run using voice"
-                    >
-                      <Phone className="w-3 h-3" />
-                      Voice
-                    </button>
-                  </>
-                )}
-                <StatusPill status={ep.status} />
-                {ep.status === "ABANDONED" && (
-                  <span className="text-xs text-amber-400">Abandoned flow</span>
-                )}
-              </div>
-            </div>
-          ))}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold text-foreground">Run {run.id.slice(0, 8)}</h2>
+          <StatusPill status={run.status} />
+          {isAgentMode && (
+            <Badge variant="secondary" className="text-[11px] font-normal gap-1">
+              <Globe className="w-3 h-3" />
+              Agent
+            </Badge>
+          )}
         </div>
-      </section>
+        <span className="text-sm text-muted-foreground">
+          {new Date(run.createdAt).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+      </div>
 
       {/* Loading spinner */}
       {run.status !== "COMPLETED" && run.status !== "FAILED" && (
-        <div className="flex flex-col items-center py-12">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-r-transparent" />
-          <p className="text-sm text-muted-foreground mt-3">
+        <div className="flex flex-col items-center py-16 border border-dashed border-border/60 rounded">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-r-transparent" />
+          <p className="text-[15px] text-muted-foreground mt-4">
             {run.status === "SIMULATING" && "Simulating personas..."}
             {run.status === "AGGREGATING" && "Generating report..."}
+            {run.status === "RUNNING" && "Running episodes..."}
             {run.status === "PENDING" && "Starting..."}
           </p>
+          <div className="mt-4 space-y-1">
+            {run.episodes.map((ep) => (
+              <div key={ep.id} className="flex items-center gap-2 text-sm">
+                <div
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    ep.status === "COMPLETED" || ep.status === "ABANDONED"
+                      ? "bg-emerald-400"
+                      : ep.status === "RUNNING"
+                        ? "bg-primary animate-pulse"
+                        : "bg-muted-foreground/30"
+                  }`}
+                />
+                <span className="text-muted-foreground">{ep.persona.name}</span>
+                <span className="text-muted-foreground/50 text-xs">
+                  {ep.status === "COMPLETED" || ep.status === "ABANDONED"
+                    ? `${ep._count.steps} steps`
+                    : ep.status === "RUNNING"
+                      ? "running..."
+                      : "pending"}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {/* Report */}
       {report && (
         <>
-          {/* Summary */}
+          {/* Summary stats */}
           <section>
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
-              Summary
-            </h3>
-            <div className="grid grid-cols-5 gap-px rounded overflow-hidden border border-border/50">
-              <StatCell label="Total" value={report.summary.totalEpisodes} />
-              <StatCell label="Completed" value={report.summary.completedEpisodes} />
-              <StatCell label="Dropped Off" value={report.summary.abandonedEpisodes} />
-              <StatCell
+            <SectionHeader icon={BarChart3} label="Summary" />
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <StatCard
+                label="Personas"
+                value={report.summary.totalEpisodes}
+                sub={`${report.summary.completedEpisodes} completed`}
+              />
+              <StatCard
+                label="Completion"
+                value={`${completionRate}%`}
+                sub={`${report.summary.abandonedEpisodes} dropped off`}
+                colorClass={completionRate >= 80 ? "text-emerald-400" : completionRate >= 50 ? "text-amber-400" : "text-red-400"}
+              />
+              <StatCard
                 label="Avg Friction"
                 value={report.summary.avgFriction.toFixed(2)}
+                sub={severityLabel(report.summary.avgFriction)}
                 colorClass={frictionColor(report.summary.avgFriction)}
               />
-              <StatCell
+              <StatCard
                 label="Avg Drop-off"
                 value={report.summary.avgDropoffRisk.toFixed(2)}
+                sub={severityLabel(report.summary.avgDropoffRisk)}
                 colorClass={frictionColor(report.summary.avgDropoffRisk)}
+              />
+              <StatCard
+                label="Findings"
+                value={report.findings.length}
+                sub="friction issues identified"
               />
             </div>
           </section>
 
-          {/* Per-screen friction heatmap */}
-          {report.perScreen && report.perScreen.length > 0 && (
+          {/* AI overview */}
+          {(overview !== null || report.findings.length > 0) && (
             <section>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
-                Friction by Frame
-              </h3>
-              <div className="flex gap-1.5 items-end">
-                {report.perScreen.map((s) => (
-                  <div key={s.screenIndex} className="flex-1 min-w-0">
-                    <div className="relative bg-muted rounded-sm overflow-hidden" style={{ height: 80 }}>
-                      <div
-                        className={`absolute bottom-0 left-0 right-0 ${frictionBg(s.avgFriction)} transition-all`}
-                        style={{ height: `${Math.max(s.avgFriction * 100, 4)}%`, opacity: 0.8 }}
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`text-sm font-semibold ${frictionColor(s.avgFriction)}`}>
-                          {s.avgFriction.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-center mt-1.5">
-                      <div className="text-xs text-muted-foreground">Frame {s.screenIndex + 1}</div>
-                      <div className="flex items-center justify-center gap-1.5 mt-0.5">
-                        {s.confusionCount > 0 && (
-                          <span className="text-[10px] text-amber-400 flex items-center gap-0.5">
-                            <AlertTriangle className="w-2.5 h-2.5" />
-                            {s.confusionCount}
-                          </span>
-                        )}
-                        {s.findingCount > 0 && (
-                          <span className="text-[10px] text-red-400 flex items-center gap-0.5">
-                            <Eye className="w-2.5 h-2.5" />
-                            {s.findingCount}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+              <SectionHeader icon={FileText} label="Overview" />
+              <div className="border border-border/50 rounded bg-card p-4">
+                {overview === null ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="h-3 w-3 animate-spin rounded-full border border-primary border-r-transparent" />
+                    Generating summary...
                   </div>
-                ))}
+                ) : (
+                  <p className="text-[15px] text-muted-foreground leading-relaxed">{overview}</p>
+                )}
               </div>
             </section>
           )}
 
-          {/* Findings grouped by screen */}
+          {/* Per-Persona */}
           <section>
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
-              Findings ({report.findings.length})
-            </h3>
-            {report.findings.length === 0 ? (
-              <div className="border border-dashed border-border/50 rounded py-8 text-center">
-                <p className="text-sm text-muted-foreground">No findings generated for this run.</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {screenIndices.map((screenIdx) => {
-                  const screenFindings = findingsByScreen.get(screenIdx) ?? [];
-                  const stats = screenStatsMap.get(screenIdx);
-                  if (screenFindings.length === 0) return null;
-
-                  return (
-                    <div key={screenIdx}>
-                      {/* Frame header */}
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-sm font-semibold text-foreground">
-                          Frame {screenIdx + 1}
-                        </span>
-                        {stats && (
-                          <div className="flex items-center gap-3 text-xs">
-                            <span className={`flex items-center gap-1 ${frictionColor(stats.avgFriction)}`}>
-                              <AlertTriangle className="w-3 h-3" />
-                              {stats.avgFriction.toFixed(2)} friction
-                            </span>
-                            <span className={`flex items-center gap-1 ${frictionColor(stats.avgDropoffRisk)}`}>
-                              <TrendingDown className="w-3 h-3" />
-                              {stats.avgDropoffRisk.toFixed(2)} drop-off
-                            </span>
-                            <span className="text-muted-foreground">
-                              {stats.confusionCount} confusion{stats.confusionCount !== 1 ? "s" : ""}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Findings for this screen */}
-                      <div className="border border-border/50 rounded divide-y divide-border/40">
-                        {screenFindings.map((f, i) => (
-                          <div key={i} className="py-3 px-4">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[15px] font-medium text-foreground">{f.issue}</p>
-                                <p className="text-sm text-muted-foreground mt-1">{f.evidence}</p>
-                                {f.recommendedFix && (
-                                  <p className="text-sm text-primary mt-1.5">
-                                    Fix: {f.recommendedFix}
-                                  </p>
-                                )}
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                  {f.affectedPersonas.map((p) => (
-                                    <Badge key={p} variant="outline" className="text-[11px] font-normal">
-                                      {p}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="text-right shrink-0 space-y-1">
-                                <div className={`text-sm font-semibold ${frictionColor(f.severity)}`}>
-                                  {f.severity.toFixed(2)}
-                                </div>
-                                <div className="text-[11px] text-muted-foreground">{f.frequency}x reported</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* Per-persona */}
-          <section>
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
-              Per-Persona
-            </h3>
-            <div className="divide-y divide-border/40">
+            <SectionHeader icon={Users} label="Personas" />
+            <div className="space-y-3">
               {report.perPersona.map((pp) => {
                 const episode = run.episodes.find((ep) => ep.persona.id === pp.personaId);
+                const isExpanded = expandedPersonas.has(pp.personaId);
+                const steps = episode ? episodeSteps.get(episode.id) : undefined;
+                const isLoading = episode ? loadingSteps.has(episode.id) : false;
+
                 return (
-                  <div key={pp.personaId} className="py-3 px-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[15px] font-medium text-foreground">{pp.personaName}</span>
-                      <div className="flex items-center gap-2">
-                        {episode && (
-                          <>
+                  <div
+                    key={pp.personaId}
+                    className="border border-border/50 rounded bg-card overflow-hidden"
+                  >
+                    {/* Persona header */}
+                    <div className="p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
+                          <span className="text-[15px] font-medium text-foreground shrink-0">{pp.personaName}</span>
+                          {pp.episodeStatus === "ABANDONED" && (
+                            <span className="text-[11px] text-amber-400 font-medium bg-amber-400/10 px-2 py-0.5 rounded shrink-0">
+                              dropped off
+                            </span>
+                          )}
+                          {pp.episodeStatus === "COMPLETED" && (
+                            <span className="text-[11px] text-emerald-400 font-medium bg-emerald-400/10 px-2 py-0.5 rounded shrink-0">
+                              completed
+                            </span>
+                          )}
+                          {/* Friction bar */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-muted-foreground">Friction</span>
+                            <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${frictionBg(pp.avgFriction)} rounded-full`}
+                                style={{ width: `${Math.max(pp.avgFriction * 100, 3)}%` }}
+                              />
+                            </div>
+                            <span className={`text-xs font-semibold tabular-nums ${frictionColor(pp.avgFriction)}`}>
+                              {pp.avgFriction.toFixed(2)}
+                            </span>
+                          </div>
+                          {/* Confidence bar */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-muted-foreground">Conf.</span>
+                            <div className="w-12 h-1 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary/60 rounded-full"
+                                style={{ width: `${Math.max(pp.avgConfidence * 100, 3)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold tabular-nums text-foreground">
+                              {pp.avgConfidence.toFixed(2)}
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">{pp.stepsCount} steps</span>
+                        </div>
+                        {/* Chat + Voice buttons */}
+                        {episode && run.status === "COMPLETED" && (
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                             >
                               <MessageCircle className="w-3 h-3" />
                               Chat
                             </button>
                             <button
                               onClick={() => setVoiceSessionOpen(true)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
-                              title="Talk through this run using voice"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
                             >
                               <Phone className="w-3 h-3" />
                               Voice
                             </button>
-                          </>
-                        )}
-                        <StatusPill status={pp.episodeStatus} />
-                        {pp.episodeStatus === "ABANDONED" && (
-                          <span className="text-xs text-amber-400">Abandoned flow</span>
+                          </div>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-muted-foreground">{pp.stepsCount} steps</span>
-                      <span className={frictionColor(pp.avgFriction)}>
-                        Friction {pp.avgFriction.toFixed(2)}
-                      </span>
-                      <span className="text-muted-foreground">
-                        Confidence {pp.avgConfidence.toFixed(2)}
-                      </span>
-                      {pp.confusions.length > 0 && (
-                        <span className="text-amber-400 flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          {pp.confusions.length} confusion{pp.confusions.length !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
-                    {pp.confusions.length > 0 && (
-                      <div className="mt-2 space-y-0.5">
-                        {pp.confusions.map((c, ci) => (
-                          <p key={ci} className="text-sm text-muted-foreground pl-3 border-l-2 border-border/50">
-                            Frame {(c.screenIndex ?? 0) + 1}: {c.issue}
-                          </p>
-                        ))}
+
+                    {/* Toggle button */}
+                    <button
+                      onClick={() => episode && togglePersonaExpand(pp.personaId, episode.id)}
+                      className="w-full flex items-center justify-between px-4 py-2 border-t border-border/40 text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
+                    >
+                      <span>{isExpanded ? "Hide" : "Show"} journey ({pp.stepsCount} steps)</span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      />
+                    </button>
+
+                    {/* Expanded steps */}
+                    {isExpanded && (
+                      <div className="border-t border-border/40 bg-muted/10">
+                        {isLoading ? (
+                          <div className="flex items-center justify-center py-6">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-r-transparent" />
+                            <span className="ml-2 text-xs text-muted-foreground">Loading steps...</span>
+                          </div>
+                        ) : steps && steps.length > 0 ? (
+                          <div className="divide-y divide-border/30">
+                            {steps.map((step) => (
+                              <div key={step.stepIndex} className="px-4 py-3">
+                                <div className="flex items-start gap-3">
+                                  {/* Step number */}
+                                  <span className="text-[11px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0 mt-0.5 tabular-nums">
+                                    {step.stepIndex + 1}
+                                  </span>
+                                  {/* Screenshot */}
+                                  <div className="w-24 h-16 shrink-0 rounded overflow-hidden border border-border/40 bg-muted">
+                                    <img
+                                      src={`/api/steps/${step.stepId}/screenshot`}
+                                      alt={step.screenLabel}
+                                      className="w-full h-full object-cover object-top"
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = "none";
+                                      }}
+                                    />
+                                  </div>
+                                  {/* Content */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-xs text-foreground/70 truncate">{step.screenLabel}</span>
+                                      <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${frictionChipClass(step.friction)} shrink-0`}>
+                                        {step.friction.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    {step.salient && (
+                                      <p className="text-xs text-muted-foreground line-clamp-2">{step.salient}</p>
+                                    )}
+                                    {step.confusions.length > 0 && (
+                                      <div className="mt-1.5 space-y-0.5">
+                                        {step.confusions.map((c, ci) => (
+                                          <div key={ci} className="flex items-start gap-1.5">
+                                            <ChevronRight className="w-3 h-3 text-amber-400/60 mt-0.5 shrink-0" />
+                                            <span className="text-[11px] text-amber-400/80">{c.issue}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="py-4 text-center text-xs text-muted-foreground">No step data available.</div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -483,6 +521,31 @@ export default function RunDetail() {
   );
 }
 
+/* ---------- Shared Components ---------- */
+
+function SectionHeader({ icon: Icon, label }: { icon: React.ComponentType<{ className?: string }>; label: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">{label}</h3>
+    </div>
+  );
+}
+
+const statusStyles: Record<string, string> = {
+  PENDING: "bg-muted text-muted-foreground",
+  RUNNING: "bg-primary/15 text-primary",
+  SIMULATING: "bg-primary/15 text-primary",
+  AGGREGATING: "bg-primary/15 text-primary",
+  COMPLETED: "bg-emerald-400/15 text-emerald-400",
+  ABANDONED: "bg-amber-400/15 text-amber-400",
+  FAILED: "bg-destructive/15 text-destructive",
+};
+
+const statusLabels: Record<string, string> = {
+  ABANDONED: "COMPLETED",
+};
+
 function StatusPill({ status }: { status: string }) {
   return (
     <span
@@ -495,19 +558,22 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function StatCell({
+function StatCard({
   label,
   value,
+  sub,
   colorClass,
 }: {
   label: string;
   value: string | number;
+  sub: string;
   colorClass?: string;
 }) {
   return (
-    <div className="bg-card px-4 py-3 text-center">
-      <div className={`text-xl font-semibold ${colorClass ?? "text-foreground"}`}>{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+    <div className="bg-card border border-border/50 rounded p-4">
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
+      <div className={`text-2xl font-bold tabular-nums ${colorClass ?? "text-foreground"}`}>{value}</div>
+      <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>
     </div>
   );
 }

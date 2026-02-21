@@ -22,16 +22,17 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@persona-lab/shared";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Pencil,
   Plus,
   Play,
   Workflow,
+  Globe,
   Users,
   Trash2,
   Check,
   AlertTriangle,
-  Mic,
 } from "lucide-react";
 import { VoiceSessionPanel } from "@/components/voice/VoiceSessionPanel";
 import { FocusGroupSession } from "@/components/voice/FocusGroupSession";
@@ -41,6 +42,9 @@ import { FocusGroupSession } from "@/components/voice/FocusGroupSession";
 interface Flow {
   id: string;
   name: string;
+  mode: "SCREENSHOT" | "AGENT";
+  url?: string;
+  goal?: string;
   createdAt: string;
   _count?: { frames: number };
 }
@@ -90,6 +94,9 @@ export default function ProjectDetail() {
 
   // Flow dialog
   const [flowName, setFlowName] = useState("");
+  const [flowMode, setFlowMode] = useState<"SCREENSHOT" | "AGENT">("SCREENSHOT");
+  const [flowUrl, setFlowUrl] = useState("");
+  const [flowGoal, setFlowGoal] = useState("");
   const [flowOpen, setFlowOpen] = useState(false);
 
   // Delete dialog
@@ -106,9 +113,10 @@ export default function ProjectDetail() {
 
   // Voice session
   const [voiceSessionOpen, setVoiceSessionOpen] = useState(false);
-  
+
   // Focus group session
   const [focusGroupOpen, setFocusGroupOpen] = useState(false);
+
 
   useEffect(() => {
     fetch(`/api/projects`)
@@ -140,15 +148,23 @@ export default function ProjectDetail() {
   }, [projectId]);
 
   async function createFlow() {
+    const payload: Record<string, string> = { projectId, name: flowName, mode: flowMode };
+    if (flowMode === "AGENT") {
+      payload.url = flowUrl;
+      payload.goal = flowGoal;
+    }
     const res = await fetch("/api/flows", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, name: flowName }),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
       const flow = await res.json();
       setFlows((prev) => [...prev, flow]);
       setFlowName("");
+      setFlowMode("SCREENSHOT");
+      setFlowUrl("");
+      setFlowGoal("");
       setFlowOpen(false);
     }
   }
@@ -221,14 +237,6 @@ export default function ProjectDetail() {
           </Button>
           <Button
             variant="outline"
-            className="gap-2 border-dashed border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
-            onClick={() => setVoiceSessionOpen(true)}
-          >
-            <Mic className="h-3.5 w-3.5" />
-            Start Voice Session
-          </Button>
-          <Button
-            variant="outline"
             className="gap-2 border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
             onClick={() => setFocusGroupOpen(true)}
           >
@@ -283,18 +291,33 @@ export default function ProjectDetail() {
               </div>
               <div className="divide-y divide-border/40">
                 {flows.map((f) => (
-                  <Link key={f.id} href={`/projects/${projectId}/flows/${f.id}`}>
+                  <Link key={f.id} href={f.mode === "AGENT" ? "#" : `/projects/${projectId}/flows/${f.id}`}>
                     <div className="group flex items-center justify-between py-3 px-2 hover:bg-muted/40 rounded transition-colors">
                       <div className="flex items-center gap-3">
-                        <Workflow className="h-4 w-4 text-muted-foreground" />
+                        {f.mode === "AGENT" ? (
+                          <Globe className="h-4 w-4 text-primary/70" />
+                        ) : (
+                          <Workflow className="h-4 w-4 text-muted-foreground" />
+                        )}
                         <span className="text-[15px] text-foreground group-hover:text-primary transition-colors">
                           {f.name}
                         </span>
+                        {f.mode === "AGENT" && f.url && (
+                          <span className="text-xs text-muted-foreground truncate max-w-48">
+                            {f.url}
+                          </span>
+                        )}
                       </div>
-                      {f._count && (
-                        <span className="text-sm text-muted-foreground">
-                          {f._count.frames} frames
-                        </span>
+                      {f.mode === "AGENT" ? (
+                        <Badge variant="secondary" className="text-[11px] font-normal">
+                          Agent
+                        </Badge>
+                      ) : (
+                        f._count && (
+                          <span className="text-sm text-muted-foreground">
+                            {f._count.frames} frames
+                          </span>
+                        )
                       )}
                     </div>
                   </Link>
@@ -309,16 +332,80 @@ export default function ProjectDetail() {
                 <DialogTitle>Create Flow</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
+                {/* Mode toggle */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                    Mode
+                  </Label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setFlowMode("SCREENSHOT")}
+                      className={`flex-1 flex items-center justify-center gap-2 rounded border px-3 py-2.5 text-[15px] transition-colors ${
+                        flowMode === "SCREENSHOT"
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-border/60 text-foreground hover:border-border"
+                      }`}
+                    >
+                      <Workflow className="h-4 w-4" />
+                      Upload Screenshots
+                    </button>
+                    <button
+                      onClick={() => setFlowMode("AGENT")}
+                      className={`flex-1 flex items-center justify-center gap-2 rounded border px-3 py-2.5 text-[15px] transition-colors ${
+                        flowMode === "AGENT"
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-border/60 text-foreground hover:border-border"
+                      }`}
+                    >
+                      <Globe className="h-4 w-4" />
+                      Website URL
+                    </button>
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
                   <Label htmlFor="flowName">Name</Label>
                   <Input
                     id="flowName"
                     value={flowName}
                     onChange={(e) => setFlowName(e.target.value)}
-                    placeholder="Checkout Flow"
+                    placeholder={flowMode === "AGENT" ? "Homepage Signup Flow" : "Checkout Flow"}
                   />
                 </div>
-                <Button onClick={createFlow} disabled={!flowName.trim()} className="w-full">
+
+                {flowMode === "AGENT" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="flowUrl">Website URL</Label>
+                      <Input
+                        id="flowUrl"
+                        type="url"
+                        value={flowUrl}
+                        onChange={(e) => setFlowUrl(e.target.value)}
+                        placeholder="https://example.com"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="flowGoal">Goal</Label>
+                      <Textarea
+                        id="flowGoal"
+                        value={flowGoal}
+                        onChange={(e) => setFlowGoal(e.target.value)}
+                        placeholder="Sign up for a free account and complete onboarding"
+                        rows={2}
+                      />
+                    </div>
+                  </>
+                )}
+
+                <Button
+                  onClick={createFlow}
+                  disabled={
+                    !flowName.trim() ||
+                    (flowMode === "AGENT" && (!flowUrl.trim() || !flowGoal.trim()))
+                  }
+                  className="w-full"
+                >
                   Create
                 </Button>
               </div>
@@ -491,8 +578,8 @@ export default function ProjectDetail() {
           </DialogHeader>
           <div className="pt-2">
             <FocusGroupSession
-              personas={personas.map((p) => ({ 
-                id: p.id, 
+              personas={personas.map((p) => ({
+                id: p.id,
                 name: p.name,
                 traits: p.traits || {
                   openness: 0.5,
@@ -509,6 +596,7 @@ export default function ProjectDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
 
       {/* ===== Create Run Dialog ===== */}
       <Dialog open={runOpen} onOpenChange={setRunOpen}>
@@ -533,12 +621,23 @@ export default function ProjectDetail() {
                         : "border-border/60 text-foreground hover:border-border"
                     }`}
                   >
-                    <span>{f.name}</span>
                     <div className="flex items-center gap-2">
-                      {f._count && (
-                        <span className="text-sm text-muted-foreground">
-                          {f._count.frames} frames
-                        </span>
+                      {f.mode === "AGENT" ? (
+                        <Globe className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                      ) : (
+                        <Workflow className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      )}
+                      <span>{f.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {f.mode === "AGENT" ? (
+                        <Badge variant="secondary" className="text-[11px] font-normal">Agent</Badge>
+                      ) : (
+                        f._count && (
+                          <span className="text-sm text-muted-foreground">
+                            {f._count.frames} frames
+                          </span>
+                        )
                       )}
                       {selectedFlow === f.id && <Check className="h-4 w-4 text-primary" />}
                     </div>

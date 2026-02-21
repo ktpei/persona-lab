@@ -8,8 +8,9 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 import { Worker } from "bullmq";
 import { QUEUE_NAMES } from "@persona-lab/shared";
-import type { SimulateEpisodeJob, AggregateReportJob } from "@persona-lab/shared";
+import type { SimulateEpisodeJob, SimulateAgentEpisodeJob, AggregateReportJob } from "@persona-lab/shared";
 import { handleSimulateEpisode } from "./workers/simulate-episode.js";
+import { handleSimulateAgentEpisode } from "./workers/simulate-agent-episode.js";
 import { handleAggregateReport } from "./workers/aggregate-report.js";
 import { getRedisOpts } from "./lib/redis.js";
 
@@ -31,6 +32,16 @@ const simulateEpisodeWorker = new Worker<SimulateEpisodeJob>(
   { connection, concurrency: 2 }
 );
 
+const simulateAgentEpisodeWorker = new Worker<SimulateAgentEpisodeJob>(
+  QUEUE_NAMES.SIMULATE_AGENT_EPISODE,
+  async (job) => {
+    console.log(`[simulate_agent_episode] Processing episode ${job.data.episodeId}`);
+    await handleSimulateAgentEpisode(job.data);
+    console.log(`[simulate_agent_episode] Done episode ${job.data.episodeId}`);
+  },
+  { connection, concurrency: 2 }
+);
+
 const aggregateReportWorker = new Worker<AggregateReportJob>(
   QUEUE_NAMES.AGGREGATE_REPORT,
   async (job) => {
@@ -41,7 +52,7 @@ const aggregateReportWorker = new Worker<AggregateReportJob>(
   { connection, concurrency: 1 }
 );
 
-const workers = [simulateEpisodeWorker, aggregateReportWorker];
+const workers = [simulateEpisodeWorker, simulateAgentEpisodeWorker, aggregateReportWorker];
 
 for (const w of workers) {
   w.on("failed", (job, err) => {
