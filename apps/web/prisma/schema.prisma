@@ -24,6 +24,11 @@ enum EpisodeStatus {
   FAILED
 }
 
+enum RunMode {
+  SCREENSHOT
+  AGENT
+}
+
 model Project {
   id          String    @id @default(cuid())
   name        String
@@ -39,6 +44,9 @@ model Flow {
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name      String
+  mode      RunMode  @default(SCREENSHOT)
+  url       String?
+  goal      String?
   createdAt DateTime @default(now())
   frames    Frame[]
   runs      Run[]
@@ -77,6 +85,7 @@ model Run {
   flowId     String
   flow       Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
   config     Json
+  mode       RunMode   @default(SCREENSHOT)
   status     RunStatus @default(PENDING)
   reportJson Json?
   createdAt  DateTime  @default(now())
@@ -109,19 +118,20 @@ model Episode {
 }
 
 model StepTrace {
-  id          String  @id @default(cuid())
-  episodeId   String
-  episode     Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  stepIndex   Int
-  frameId     String
-  frame       Frame   @relation(fields: [frameId], references: [id], onDelete: Cascade)
-  observation Json
-  reasoning   Json
-  action      String
-  confidence  Float
-  friction    Float
-  dropoffRisk Float
-  memory      String?
+  id             String  @id @default(cuid())
+  episodeId      String
+  episode        Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  stepIndex      Int
+  frameId        String?
+  frame          Frame?  @relation(fields: [frameId], references: [id], onDelete: Cascade)
+  screenshotPath String?
+  observation    Json
+  reasoning      Json
+  action         String
+  confidence     Float
+  friction       Float
+  dropoffRisk    Float
+  memory         String?
 
   @@unique([episodeId, stepIndex])
 }
@@ -137,5 +147,6 @@ model Finding {
   affectedPersonas Json
   elementRef       String?
   stepIndex        Int?
+  screenUrl        String?
   recommendedFix   String?
 }

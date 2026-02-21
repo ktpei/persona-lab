@@ -25,6 +25,8 @@ interface StepReasoning {
   salient?: string;
   confusions?: Array<{ issue: string; evidence: string }>;
   likelyAction?: string;
+  browserAction?: { type: string; [key: string]: unknown };
+  intent?: string;
   confidence?: number;
   friction?: number;
 }
@@ -46,7 +48,7 @@ export async function POST(
       persona: true,
       run: {
         include: {
-          flow: { select: { name: true } },
+          flow: { select: { name: true, mode: true } },
         },
       },
       steps: {
@@ -100,12 +102,28 @@ export async function POST(
   const config = episode.run.config as { model?: string } | null;
   const model = config?.model ?? DEFAULT_MODEL;
 
+  const isAgentMode = episode.run.flow.mode === "AGENT";
+
   // Build journey summary from step traces
   const journeyLines: string[] = [];
   for (const step of episode.steps) {
     const r = step.reasoning as StepReasoning | null;
-    const frameIdx = step.frame.stepIndex;
-    const parts: string[] = [`Frame ${frameIdx + 1} (step ${step.stepIndex + 1}):`];
+    const obs = step.observation as { url?: string; pageTitle?: string } | null;
+
+    let locationLabel: string;
+    if (isAgentMode && obs?.url) {
+      try {
+        const pathname = new URL(obs.url).pathname;
+        locationLabel = `Page "${obs.pageTitle || pathname}" (${pathname})`;
+      } catch {
+        locationLabel = `Page (step ${step.stepIndex + 1})`;
+      }
+    } else {
+      const frameIdx = step.frame?.stepIndex ?? step.stepIndex;
+      locationLabel = `Frame ${frameIdx + 1}`;
+    }
+
+    const parts: string[] = [`${locationLabel} (step ${step.stepIndex + 1}):`];
 
     // Defensive: Handle null/undefined reasoning
     if (!r) {
@@ -131,18 +149,12 @@ export async function POST(
         .join("; ");
       parts.push(`My confusions: ${issues}.`);
     }
-    
-    if (r.likelyAction && typeof r.likelyAction === "string" && r.likelyAction.length < 100) {
-      parts.push(`I chose to: ${r.likelyAction}.`);
-    }
-    
-    if (typeof r.confidence === "number" && r.confidence >= 0 && r.confidence <= 1) {
-      parts.push(`Confidence: ${r.confidence.toFixed(2)}.`);
-    }
-    
-    if (typeof r.friction === "number" && r.friction >= 0 && r.friction <= 1) {
-      parts.push(`Friction: ${r.friction.toFixed(2)}.`);
-    }
+    // Use intent for agent mode, likelyAction for screenshot mode
+    const action = r?.intent ?? r?.likelyAction;
+    if (action) parts.push(`I chose to: ${action}.`);
+    if (r?.browserAction) parts.push(`Browser action: ${r.browserAction.type}.`);
+    if (r?.confidence != null) parts.push(`Confidence: ${r.confidence.toFixed(2)}.`);
+    if (r?.friction != null) parts.push(`Friction: ${r.friction.toFixed(2)}.`);
 
     journeyLines.push(parts.join(" "));
     
@@ -155,7 +167,25 @@ export async function POST(
 
   const outcome = episode.status === "COMPLETED" ? "completed the flow" : "abandoned the flow";
 
+  const totalSteps = episode.steps.length;
+  const avgFriction =
+    totalSteps > 0
+      ? episode.steps.reduce((sum, s) => sum + s.friction, 0) / totalSteps
+      : 0;
+  const avgConfidence =
+    totalSteps > 0
+      ? episode.steps.reduce((sum, s) => sum + s.confidence, 0) / totalSteps
+      : 0;
+
   const systemPrompt = `${personaContext}
+
+## Your Journey Summary
+- Total steps taken: ${totalSteps}
+- Average friction across your journey: ${avgFriction.toFixed(2)}
+- Average confidence across your journey: ${avgConfidence.toFixed(2)}
+- Outcome: ${outcome}
+
+When asked about your overall friction, step count, or confidence, refer to these summary numbers. Individual step details are below.
 
 ## Your Journey
 You just went through UX flow "${flowName}" and ${outcome}. Here is what happened at each step:

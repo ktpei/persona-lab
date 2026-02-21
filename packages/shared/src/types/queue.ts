@@ -11,6 +11,15 @@ export interface SimulateEpisodeJob {
   seed?: number;
 }
 
+export interface SimulateAgentEpisodeJob {
+  episodeId: string;
+  runId: string;
+  model: string;
+  maxSteps: number;
+  url: string;
+  goal: string;
+}
+
 export interface AggregateReportJob {
   runId: string;
 }

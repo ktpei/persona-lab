@@ -16,7 +16,7 @@ pnpm install
 
 # 2. Copy environment config
 cp .env.example .env
-# Edit .env with your OPENROUTER_API_KEY (and ELEVENLABS_API_KEY for Voice Session)
+# Edit .env with your OPENROUTER_API_KEY
 
 # 3. Start infrastructure
 docker compose up -d
@@ -47,10 +47,6 @@ pnpm dev:worker
 5. Watch the pipeline: PARSING → SIMULATING → AGGREGATING → COMPLETED
 6. View the report with findings, severity scores, and per-persona breakdown
 
-## Voice Session Mode
-
-On a project page, use **Start Voice Session** to speak with an AI persona in real time. The persona responds with concise, analytical speech grounded in their OCEAN traits and the selected flow. Sessions are ephemeral (no persistence); use **End Session** to close. Requires `ELEVENLABS_API_KEY` in `.env` for text-to-speech.
-
 ## Architecture
 
 - **apps/web** — Next.js App Router (UI + API routes)
@@ -65,7 +61,7 @@ Uses OpenRouter (OpenAI-compatible API) to support multiple models:
 - `google/gemini-2.0-flash`
 - Any other vision-capable model on OpenRouter
 
-Set `OPENROUTER_API_KEY` in your `.env` file. For Voice Session Mode, set `ELEVENLABS_API_KEY` (get an API key at [ElevenLabs](https://elevenlabs.io/)).
+Set `OPENROUTER_API_KEY` in your `.env` file.
 
 ## Worker Pipeline
 
