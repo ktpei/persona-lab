@@ -108,7 +108,25 @@ export async function POST(
 
   const outcome = episode.status === "COMPLETED" ? "completed the flow" : "abandoned the flow";
 
+  const totalSteps = episode.steps.length;
+  const avgFriction =
+    totalSteps > 0
+      ? episode.steps.reduce((sum, s) => sum + s.friction, 0) / totalSteps
+      : 0;
+  const avgConfidence =
+    totalSteps > 0
+      ? episode.steps.reduce((sum, s) => sum + s.confidence, 0) / totalSteps
+      : 0;
+
   const systemPrompt = `${personaContext}
+
+## Your Journey Summary
+- Total steps taken: ${totalSteps}
+- Average friction across your journey: ${avgFriction.toFixed(2)}
+- Average confidence across your journey: ${avgConfidence.toFixed(2)}
+- Outcome: ${outcome}
+
+When asked about your overall friction, step count, or confidence, refer to these summary numbers. Individual step details are below.
 
 ## Your Journey
 You just went through the UX flow "${flowName}" and ${outcome}. Here is what happened at each step:
