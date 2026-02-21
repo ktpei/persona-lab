@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { simulateEpisodeQueue } from "@/lib/queue";
+import { simulateEpisodeQueue, simulateAgentEpisodeQueue } from "@/lib/queue";
 import { RunConfig, QUEUE_NAMES } from "@persona-lab/shared";
 import { z } from "zod";
 
@@ -15,11 +15,23 @@ export async function POST(req: NextRequest) {
   const input = CreateRunInput.parse(body);
   const config = RunConfig.parse(input.config);
 
+  // Look up flow to determine mode
+  const flow = await prisma.flow.findUnique({
+    where: { id: input.flowId },
+    select: { mode: true, url: true, goal: true },
+  });
+  if (!flow) {
+    return NextResponse.json({ error: "Flow not found" }, { status: 404 });
+  }
+
+  const isAgent = flow.mode === "AGENT";
+
   // Create run with persona associations and episodes
   const run = await prisma.run.create({
     data: {
       flowId: input.flowId,
       config,
+      mode: flow.mode,
       status: "SIMULATING",
       personas: {
         create: input.personaIds.map((personaId) => ({ personaId })),
@@ -37,15 +49,26 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Enqueue simulate jobs directly — no parse step needed
+  // Enqueue appropriate jobs based on flow mode
   for (const episode of run.episodes) {
-    await simulateEpisodeQueue.add(QUEUE_NAMES.SIMULATE_EPISODE, {
-      episodeId: episode.id,
-      runId: run.id,
-      model: config.model,
-      maxSteps: config.maxSteps,
-      seed: config.seed,
-    });
+    if (isAgent) {
+      await simulateAgentEpisodeQueue.add(QUEUE_NAMES.SIMULATE_AGENT_EPISODE, {
+        episodeId: episode.id,
+        runId: run.id,
+        model: config.model,
+        maxSteps: config.maxSteps,
+        url: flow.url!,
+        goal: flow.goal!,
+      });
+    } else {
+      await simulateEpisodeQueue.add(QUEUE_NAMES.SIMULATE_EPISODE, {
+        episodeId: episode.id,
+        runId: run.id,
+        model: config.model,
+        maxSteps: config.maxSteps,
+        seed: config.seed,
+      });
+    }
   }
 
   return NextResponse.json(run, { status: 201 });

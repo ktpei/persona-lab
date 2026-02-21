@@ -1,4 +1,4 @@
-export { Action } from "./types/action.js";
+export { Action, BrowserAction } from "./types/action.js";
 export {
   PersonaKnobs,
   CreatePersonaInput,
@@ -7,9 +7,9 @@ export {
   Gender,
   BatchGenerateInput,
   GeneratedPersona,
-  TraitModifiers,
-  SubgroupCategory,
-  SubgroupTag,
+  TraitRangeSchema,
+  PersonaArchetype,
+  PersonaGroup,
   TRAIT_LABELS,
 } from "./types/persona.js";
 export type {
@@ -17,14 +17,15 @@ export type {
   AgeGroup as AgeGroupType,
   Gender as GenderType,
   GeneratedPersona as GeneratedPersonaType,
-  TraitModifiers as TraitModifiersType,
-  SubgroupCategory as SubgroupCategoryType,
-  SubgroupTag as SubgroupTagType,
+  PersonaArchetype as PersonaArchetypeType,
+  PersonaGroup as PersonaGroupType,
+  TraitRangeSchema as TraitRangeSchemaType,
 } from "./types/persona.js";
 export { UIElement, FrameParseResult } from "./types/element.js";
 export {
   Confusion,
   ReasoningOutput,
+  AgentReasoningOutput,
 } from "./types/step-trace.js";
 export { RunConfig } from "./types/run-config.js";
 export { FindingData, ScreenStats, ReportJson } from "./types/finding.js";
@@ -33,6 +34,7 @@ export type { StorageProvider } from "./types/storage.js";
 export type {
   ParseFrameJob,
   SimulateEpisodeJob,
+  SimulateAgentEpisodeJob,
   AggregateReportJob,
 } from "./types/queue.js";
 export {
@@ -41,10 +43,9 @@ export {
   MAX_STEPS_DEFAULT,
   AVAILABLE_MODELS,
   DEMOGRAPHIC_PRESETS,
-  SUBGROUP_CATEGORIES,
-  SUBGROUP_TAGS,
+  PERSONA_GROUPS,
 } from "./constants.js";
-export type { AvailableModel, DemographicPreset, TraitRange, SubgroupCategoryInfo } from "./constants.js";
-export { applySubgroupModifiers, generateArchetype } from "./traits.js";
+export type { AvailableModel, DemographicPreset, TraitRange } from "./constants.js";
+export { generateArchetype } from "./traits.js";
 export { buildPersonaContext, describeTraitLevel, traitToProse } from "./persona-context.js";
 export type { PersonaData } from "./persona-context.js";

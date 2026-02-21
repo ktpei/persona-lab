@@ -70,36 +70,36 @@ export const TRAIT_LABELS: Record<keyof PersonaTraits, { label: string; ocean: s
   },
 };
 
-// ---------- Subgroup tags ----------
+// ---------- Persona Groups & Archetypes ----------
 
-export const TraitModifiers = z.object({
-  patience: z.number().min(-1).max(1).optional(),
-  exploration: z.number().min(-1).max(1).optional(),
-  frustrationSensitivity: z.number().min(-1).max(1).optional(),
-  forgiveness: z.number().min(-1).max(1).optional(),
-  helpSeeking: z.number().min(-1).max(1).optional(),
+export const TraitRangeSchema = z.object({
+  patience: z.tuple([z.number(), z.number()]),
+  exploration: z.tuple([z.number(), z.number()]),
+  frustrationSensitivity: z.tuple([z.number(), z.number()]),
+  forgiveness: z.tuple([z.number(), z.number()]),
+  helpSeeking: z.tuple([z.number(), z.number()]),
 });
-export type TraitModifiers = z.infer<typeof TraitModifiers>;
+export type TraitRangeSchema = z.infer<typeof TraitRangeSchema>;
 
-export const SubgroupCategory = z.enum([
-  "cross-domain",
-  "e-commerce",
-  "saas-onboarding",
-  "finance",
-  "travel",
-  "healthcare",
-  "support",
-]);
-export type SubgroupCategory = z.infer<typeof SubgroupCategory>;
-
-export const SubgroupTag = z.object({
+export const PersonaArchetype = z.object({
   id: z.string(),
   label: z.string(),
-  category: SubgroupCategory,
-  modifiers: TraitModifiers,
-  isCustom: z.boolean().optional(),
+  description: z.string(),
+  traitRanges: TraitRangeSchema,
+  demographicDefaults: z.object({
+    ageGroup: AgeGroup,
+    gender: Gender,
+  }).optional(),
 });
-export type SubgroupTag = z.infer<typeof SubgroupTag>;
+export type PersonaArchetype = z.infer<typeof PersonaArchetype>;
+
+export const PersonaGroup = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  archetypes: z.array(PersonaArchetype),
+});
+export type PersonaGroup = z.infer<typeof PersonaGroup>;
 
 // ---------- Create / Batch schemas ----------
 
@@ -117,10 +117,9 @@ export type CreatePersonaInput = z.infer<typeof CreatePersonaInput>;
 
 export const BatchGenerateInput = z.object({
   projectId: z.string(),
-  presetId: z.string(),
-  count: z.number().int().min(1).max(50),
-  subgroupTagIds: z.array(z.string()).optional(),
-  customSubgroups: z.array(SubgroupTag).optional(),
+  groupIds: z.array(z.string()).min(1),
+  disabledArchetypeIds: z.array(z.string()).optional(),
+  count: z.number().int().min(1).max(200),
 });
 export type BatchGenerateInput = z.infer<typeof BatchGenerateInput>;
 
@@ -130,7 +129,7 @@ export const GeneratedPersona = z.object({
   gender: Gender,
   traits: PersonaTraits,
   accessibilityNeeds: z.array(z.string()),
-  subgroupTags: z.array(z.string()).optional(),
-  archetype: z.string().optional(),
+  archetype: z.string(),
+  groupId: z.string(),
 });
 export type GeneratedPersona = z.infer<typeof GeneratedPersona>;

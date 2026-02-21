@@ -25,6 +25,8 @@ interface StepReasoning {
   salient?: string;
   confusions?: Array<{ issue: string; evidence: string }>;
   likelyAction?: string;
+  browserAction?: { type: string; [key: string]: unknown };
+  intent?: string;
   confidence?: number;
   friction?: number;
 }
@@ -42,7 +44,7 @@ export async function POST(
       persona: true,
       run: {
         include: {
-          flow: { select: { name: true } },
+          flow: { select: { name: true, mode: true } },
         },
       },
       steps: {
@@ -66,19 +68,38 @@ export async function POST(
   const config = episode.run.config as { model?: string } | null;
   const model = config?.model ?? DEFAULT_MODEL;
 
+  const isAgentMode = episode.run.flow.mode === "AGENT";
+
   // Build journey summary from step traces
   const journeyLines: string[] = [];
   for (const step of episode.steps) {
     const r = step.reasoning as StepReasoning | null;
-    const frameIdx = step.frame.stepIndex;
-    const parts: string[] = [`Frame ${frameIdx + 1} (step ${step.stepIndex + 1}):`];
+    const obs = step.observation as { url?: string; pageTitle?: string } | null;
+
+    let locationLabel: string;
+    if (isAgentMode && obs?.url) {
+      try {
+        const pathname = new URL(obs.url).pathname;
+        locationLabel = `Page "${obs.pageTitle || pathname}" (${pathname})`;
+      } catch {
+        locationLabel = `Page (step ${step.stepIndex + 1})`;
+      }
+    } else {
+      const frameIdx = step.frame?.stepIndex ?? step.stepIndex;
+      locationLabel = `Frame ${frameIdx + 1}`;
+    }
+
+    const parts: string[] = [`${locationLabel} (step ${step.stepIndex + 1}):`];
 
     if (r?.salient) parts.push(`I noticed: ${r.salient}.`);
     if (r?.confusions && r.confusions.length > 0) {
       const issues = r.confusions.map((c) => c.issue).join("; ");
       parts.push(`My confusions: ${issues}.`);
     }
-    if (r?.likelyAction) parts.push(`I chose to: ${r.likelyAction}.`);
+    // Use intent for agent mode, likelyAction for screenshot mode
+    const action = r?.intent ?? r?.likelyAction;
+    if (action) parts.push(`I chose to: ${action}.`);
+    if (r?.browserAction) parts.push(`Browser action: ${r.browserAction.type}.`);
     if (r?.confidence != null) parts.push(`Confidence: ${r.confidence.toFixed(2)}.`);
     if (r?.friction != null) parts.push(`Friction: ${r.friction.toFixed(2)}.`);
 
