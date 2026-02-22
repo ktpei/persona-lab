@@ -50,6 +50,7 @@ export class BrowserSession {
     const pages = this.context.pages();
     this.page = pages[0] ?? await this.context.newPage();
 
+    await this.page.setViewportSize({ width: 1280, height: 800 });
     this.page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
     this.page.setDefaultTimeout(10_000);
   }
