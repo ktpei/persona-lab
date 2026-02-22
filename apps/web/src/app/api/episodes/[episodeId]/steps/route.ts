@@ -1,11 +1,24 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+interface BrowserAction {
+  type: string;
+  elementIndex?: number;
+  text?: string;
+  direction?: string;
+  success?: boolean;
+  reason?: string;
+  x?: number;
+  y?: number;
+}
+
 interface StepReasoning {
   salient?: string;
   confusions?: Array<{ issue: string; evidence: string }>;
   likelyAction?: string;
   intent?: string;
+  browserAction?: BrowserAction;
+  memoryUpdate?: string;
 }
 
 export async function GET(
@@ -42,7 +55,7 @@ export async function GET(
 
   const steps = episode.steps.map((step) => {
     const r = step.reasoning as StepReasoning | null;
-    const obs = step.observation as { url?: string; pageTitle?: string } | null;
+    const obs = step.observation as { url?: string; pageTitle?: string; elementCount?: number } | null;
 
     let screenLabel: string;
     if (isAgentMode && obs?.url) {
@@ -67,6 +80,11 @@ export async function GET(
       salient: r?.salient,
       action: r?.intent ?? r?.likelyAction,
       confusions: r?.confusions ?? [],
+      // Debug fields
+      browserAction: r?.browserAction,
+      memoryUpdate: r?.memoryUpdate,
+      url: obs?.url,
+      elementCount: obs?.elementCount,
     };
   });
 

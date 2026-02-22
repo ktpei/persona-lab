@@ -15,6 +15,7 @@ export class OpenRouterProvider implements LLMProvider {
     this.client = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
       apiKey,
+      timeout: 90_000, // 90s — prevent hung LLM calls from stalling the agent forever
     });
     this.model = model;
   }

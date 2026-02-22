@@ -75,6 +75,18 @@ interface Report {
   }>;
 }
 
+interface BrowserAction {
+  type: string;
+  elementIndex?: number;
+  text?: string;
+  direction?: string;
+  success?: boolean;
+  reason?: string;
+  x?: number;
+  y?: number;
+  submit?: boolean;
+}
+
 interface StepData {
   stepId: string;
   stepIndex: number;
@@ -85,6 +97,11 @@ interface StepData {
   salient?: string;
   action?: string;
   confusions: Array<{ issue: string; evidence: string }>;
+  // Debug fields
+  browserAction?: BrowserAction;
+  memoryUpdate?: string;
+  url?: string;
+  elementCount?: number;
 }
 
 function frictionColor(value: number): string {
@@ -109,6 +126,34 @@ function severityLabel(value: number): string {
   if (value >= 0.6) return "High";
   if (value >= 0.3) return "Medium";
   return "Low";
+}
+
+function formatBrowserAction(a: BrowserAction): string {
+  switch (a.type) {
+    case "click":
+      return `click element #${a.elementIndex}`;
+    case "click_coordinates":
+      return `click at (${a.x}, ${a.y})`;
+    case "type":
+      return `type "${a.text}"${a.elementIndex != null ? ` in #${a.elementIndex}` : ""}${a.submit ? " → submit" : ""}`;
+    case "scroll":
+      return `scroll ${a.direction}`;
+    case "navigate_back":
+      return "navigate back";
+    case "wait":
+      return `wait — ${a.reason ?? ""}`;
+    case "done":
+      return a.success ? "done: goal reached" : `done: abandoned — ${a.reason ?? ""}`;
+    default:
+      return a.type;
+  }
+}
+
+function actionChipClass(type: string, success?: boolean): string {
+  if (type === "done") return success ? "bg-emerald-400/15 text-emerald-400 border-emerald-400/30" : "bg-red-400/15 text-red-400 border-red-400/30";
+  if (type === "navigate_back") return "bg-amber-400/15 text-amber-400 border-amber-400/30";
+  if (type === "scroll" || type === "wait") return "bg-muted/50 text-muted-foreground border-border/50";
+  return "bg-primary/10 text-primary border-primary/20";
 }
 
 export default function RunDetail() {
@@ -414,9 +459,23 @@ export default function RunDetail() {
                                     <div className="flex items-center gap-2 mb-1">
                                       <span className="text-xs text-foreground/70 truncate">{step.screenLabel}</span>
                                       <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${frictionChipClass(step.friction)} shrink-0`}>
-                                        {step.friction.toFixed(2)}
+                                        f {step.friction.toFixed(2)}
+                                      </span>
+                                      <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${frictionChipClass(step.dropoffRisk)} shrink-0`}>
+                                        d {step.dropoffRisk.toFixed(2)}
                                       </span>
                                     </div>
+                                    {/* Action taken */}
+                                    {step.browserAction && (
+                                      <div className="flex items-center gap-1.5 mb-1">
+                                        <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border ${actionChipClass(step.browserAction.type, step.browserAction.success)}`}>
+                                          {formatBrowserAction(step.browserAction)}
+                                        </span>
+                                        {step.elementCount != null && (
+                                          <span className="text-[10px] text-muted-foreground/60">{step.elementCount} els</span>
+                                        )}
+                                      </div>
+                                    )}
                                     {step.salient && (
                                       <p className="text-xs text-muted-foreground line-clamp-2">{step.salient}</p>
                                     )}
@@ -428,6 +487,13 @@ export default function RunDetail() {
                                             <span className="text-[11px] text-amber-400/80">{c.issue}</span>
                                           </div>
                                         ))}
+                                      </div>
+                                    )}
+                                    {/* Memory update */}
+                                    {step.memoryUpdate && (
+                                      <div className="mt-1.5 flex items-start gap-1.5">
+                                        <span className="text-[10px] text-muted-foreground/50 font-medium uppercase tracking-wider shrink-0 mt-0.5">mem</span>
+                                        <span className="text-[11px] text-muted-foreground/70 italic">{step.memoryUpdate}</span>
                                       </div>
                                     )}
                                   </div>
