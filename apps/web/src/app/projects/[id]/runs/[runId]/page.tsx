@@ -222,40 +222,13 @@ export default function RunDetail() {
         </span>
       </div>
 
-      {/* Loading spinner */}
+      {/* Live persona grid */}
       {run.status !== "COMPLETED" && run.status !== "FAILED" && (
-        <div className="flex flex-col items-center py-16 border border-dashed border-border/60 rounded">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-r-transparent" />
-          <p className="text-[15px] text-muted-foreground mt-4">
-            {run.status === "SIMULATING" && "Simulating personas..."}
-            {run.status === "AGGREGATING" && "Generating report..."}
-            {run.status === "RUNNING" && "Running episodes..."}
-            {run.status === "PENDING" && "Starting..."}
-          </p>
-          <div className="mt-4 space-y-1">
-            {run.episodes.map((ep) => (
-              <div key={ep.id} className="flex items-center gap-2 text-sm">
-                <div
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    ep.status === "COMPLETED" || ep.status === "ABANDONED"
-                      ? "bg-emerald-400"
-                      : ep.status === "RUNNING"
-                        ? "bg-primary animate-pulse"
-                        : "bg-muted-foreground/30"
-                  }`}
-                />
-                <span className="text-muted-foreground">{ep.persona.name}</span>
-                <span className="text-muted-foreground/50 text-xs">
-                  {ep.status === "COMPLETED" || ep.status === "ABANDONED"
-                    ? `${ep._count.steps} steps`
-                    : ep.status === "RUNNING"
-                      ? "running..."
-                      : "pending"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <LivePersonaGrid
+          episodes={run.episodes}
+          runStatus={run.status}
+          isAgentMode={isAgentMode}
+        />
       )}
 
       {/* Report */}
@@ -470,6 +443,179 @@ export default function RunDetail() {
           onClose={() => setChatEpisode(null)}
         />
       )}
+    </div>
+  );
+}
+
+/* ---------- Live Persona Grid ---------- */
+
+const MAX_VISIBLE = 9;
+const TERMINAL = new Set(["COMPLETED", "ABANDONED", "FAILED"]);
+
+function getGridCols(count: number): number {
+  if (count === 1) return 1;
+  if (count === 2) return 2;
+  if (count === 3) return 3;
+  if (count === 4) return 2; // 2×2
+  return 3;                  // 5–9: 3-col
+}
+
+function LivePersonaGrid({
+  episodes,
+  runStatus,
+  isAgentMode,
+}: {
+  episodes: Episode[];
+  runStatus: string;
+  isAgentMode: boolean;
+}) {
+  const [showMore, setShowMore] = useState(false);
+
+  const visible = episodes.slice(0, MAX_VISIBLE);
+  const overflow = episodes.slice(MAX_VISIBLE);
+
+  const cols = getGridCols(visible.length);
+  const gridClass = [
+    "grid gap-2",
+    cols === 1 ? "grid-cols-1 max-w-3xl mx-auto" : cols === 2 ? "grid-cols-2" : "grid-cols-3",
+  ].join(" ");
+
+  const doneCount = episodes.filter((e) => TERMINAL.has(e.status)).length;
+  const isAggregating = runStatus === "AGGREGATING";
+
+  return (
+    <div className="space-y-3">
+      {/* Header row */}
+      <div className="flex items-center gap-2">
+        {isAggregating ? (
+          <>
+            <div className="h-2.5 w-2.5 animate-spin rounded-full border border-primary border-r-transparent" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Generating Report</span>
+          </>
+        ) : (
+          <>
+            <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Live</span>
+          </>
+        )}
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+          {doneCount} / {episodes.length} done
+        </span>
+      </div>
+
+      {/* Main grid */}
+      <div className={gridClass}>
+        {visible.map((ep) => (
+          <LivePersonaCell key={ep.id} episode={ep} isAgentMode={isAgentMode} />
+        ))}
+      </div>
+
+      {/* Overflow bar */}
+      {overflow.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setShowMore((s) => !s)}
+            className="w-full flex items-center justify-between px-4 py-2.5 border border-border/50 rounded bg-card text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
+          >
+            <div className="flex items-center gap-1.5">
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? "rotate-180" : ""}`} />
+              <span>
+                {overflow.length} more persona{overflow.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <span>
+              {overflow.filter((e) => e.status === "RUNNING").length} running
+            </span>
+          </button>
+          {showMore && (
+            <div className="grid grid-cols-3 gap-2">
+              {overflow.map((ep) => (
+                <LivePersonaCell key={ep.id} episode={ep} isAgentMode={isAgentMode} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LivePersonaCell({
+  episode,
+  isAgentMode,
+}: {
+  episode: Episode;
+  isAgentMode: boolean;
+}) {
+  const isDone = TERMINAL.has(episode.status);
+  const [timestamp, setTimestamp] = useState(() => Date.now());
+  const [hasImage, setHasImage] = useState(false);
+
+  useEffect(() => {
+    if (isDone || !isAgentMode) return;
+    const interval = setInterval(() => setTimestamp(Date.now()), 1500);
+    return () => clearInterval(interval);
+  }, [isDone, isAgentMode]);
+
+  const dotClass =
+    episode.status === "RUNNING"
+      ? "bg-primary animate-pulse"
+      : episode.status === "COMPLETED" || episode.status === "ABANDONED"
+        ? "bg-emerald-400"
+        : episode.status === "FAILED"
+          ? "bg-red-400"
+          : "bg-muted-foreground/30";
+
+  const statusLabel =
+    episode.status === "COMPLETED" ? "completed" :
+    episode.status === "ABANDONED" ? "dropped off" :
+    episode.status === "FAILED" ? "failed" :
+    episode.status === "RUNNING" ? "running" : "pending";
+
+  return (
+    <div className="relative rounded overflow-hidden bg-[#0d0d0d] border border-border/30" style={{ aspectRatio: "16/10" }}>
+      {/* Live screenshot */}
+      {isAgentMode && (
+        <img
+          src={`/api/episodes/${episode.id}/latest-screenshot?t=${timestamp}`}
+          alt={episode.persona.name}
+          className={`absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-500 ${hasImage ? "opacity-100" : "opacity-0"}`}
+          onLoad={() => setHasImage(true)}
+          onError={() => setHasImage(false)}
+        />
+      )}
+
+      {/* Placeholder while waiting for first screenshot */}
+      {!hasImage && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          {episode.status === "RUNNING" ? (
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/40 border-r-transparent" />
+          ) : episode.status === "PENDING" ? (
+            <div className="h-3 w-3 rounded-full bg-muted-foreground/20" />
+          ) : null}
+        </div>
+      )}
+
+      {/* Dim overlay when done */}
+      {isDone && hasImage && (
+        <div className="absolute inset-0 bg-black/40" />
+      )}
+
+      {/* Bottom name bar */}
+      <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
+        <div className="flex items-center justify-between">
+          <span className="text-[13px] font-medium text-white leading-none truncate pr-2">
+            {episode.persona.name}
+          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] text-white/50 tabular-nums">{episode._count.steps} steps</span>
+            <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+          </div>
+        </div>
+        {isDone && (
+          <p className="text-[11px] text-white/40 mt-0.5">{statusLabel}</p>
+        )}
+      </div>
     </div>
   );
 }

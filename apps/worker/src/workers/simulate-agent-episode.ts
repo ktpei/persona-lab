@@ -15,7 +15,7 @@ import {
 import type { SimulateAgentEpisodeJob, AggregateReportJob } from "@persona-lab/shared";
 import type { Prisma } from "@prisma/client";
 
-const MAX_STUCK_COUNT = 3;
+const MAX_STUCK_COUNT = 5;
 
 /**
  * Repair common LLM mistakes in the raw JSON before Zod validation.
@@ -24,6 +24,12 @@ const MAX_STUCK_COUNT = 3;
 function repairRawOutput(raw: Record<string, unknown>): Record<string, unknown> {
   const action = raw.browserAction as Record<string, unknown> | undefined;
   if (!action) return raw;
+
+  // "type" action: default submit to true — most typing is into search/form fields
+  // that have no separate submit button. LLM must explicitly set submit:false to suppress.
+  if (action.type === "type" && action.submit == null) {
+    action.submit = true;
+  }
 
   // "type" action missing "text" → demote to "click" (LLM meant click but said type)
   if (action.type === "type" && !action.text) {
@@ -198,6 +204,7 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
   let memory: string | null = null;
   let prevUrl = "";
   let stuckCount = 0;
+  let lastActionWasInteraction = false; // typing/clicking counts as progress even if URL didn't change
 
   const skipDocker = process.env.BROWSER_MODE === "local";
   const container = skipDocker ? null : new BrowserContainer();
@@ -226,13 +233,16 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
       const currentUrl = await session.getUrl();
       const pageTitle = await session.getTitle();
 
-      // Track stuck detection
-      if (currentUrl === prevUrl) {
-        stuckCount++;
-      } else {
+      // Track stuck detection — typing/clicking always counts as progress
+      if (currentUrl !== prevUrl) {
         stuckCount = 0;
         prevUrl = currentUrl;
+      } else if (lastActionWasInteraction) {
+        stuckCount = 0; // gave the page a chance to react; don't penalise
+      } else {
+        stuckCount++;
       }
+      lastActionWasInteraction = false;
 
       // Force abandon if stuck too long
       if (stuckCount >= MAX_STUCK_COUNT) {
@@ -341,6 +351,10 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
       // Execute the browser action
       try {
         await session.executeAction(reasoning.browserAction, elements);
+        const actionType = reasoning.browserAction.type;
+        if (actionType === "type" || actionType === "click" || actionType === "click_coordinates") {
+          lastActionWasInteraction = true;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`${tag} Step ${stepIdx}: action execution failed: ${msg}`);
