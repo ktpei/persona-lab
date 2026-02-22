@@ -51,7 +51,7 @@ Analyze this screen critically. You MUST identify at least one friction point or
 
 For example: if you are impatient, even a small delay or extra click is friction. If you have low exploration tendency, unfamiliar layouts or hidden navigation cause confusion. If you have high frustration sensitivity, ambiguous labels or too many choices are friction points.
 
-A friction score of 0.0 should be extremely rare — reserve it only for screens that are absolutely perfectly clear for you. Most screens should have friction of at least 0.1-0.3.
+A friction score of 0.0 should be extremely rare — reserve it only for screens that are absolutely perfectly clear for you. Most screens should have friction of at least 0.3-0.5. Be dramatic and use the full 0-1 range — different personas should produce noticeably different scores for the same screen. If you are impatient or easily frustrated, scores of 0.5+ should be common. Screens with real obstacles should score 0.6+.
 
 After identifying friction, decide what action you would most likely take to complete "${flowName}".
 

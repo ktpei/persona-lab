@@ -195,9 +195,9 @@ Analyze this page critically. You MUST identify at least one friction point or c
 - Poor search results, irrelevant recommendations, or hard-to-find categories
 - Tiny text, low contrast, or elements that are hard to notice
 
-A friction score of 0.0 should be extremely rare — reserve it only for screens that are absolutely flawless for your persona. Most screens should score at least 0.2-0.4 friction. Screens with real obstacles should score 0.5+.
+A friction score of 0.0 should be extremely rare — reserve it only for screens that are absolutely flawless for your persona. Most screens should score at least 0.3-0.5 friction. Screens with any real obstacle should score 0.6+. Be dramatic — real users are far more frustrated than designers expect.
 
-Remember: your scores should reflect YOUR persona's tolerances. If you are impatient, even small delays or extra clicks should push friction to 0.4+. If you have high frustration sensitivity, ambiguous elements should push friction to 0.5+. If you are unforgiving of bad UX, any confusion should score at least 0.3.
+Remember: your scores should reflect YOUR persona's tolerances with strong differentiation between personas. If you are impatient, even small delays or extra clicks should push friction to 0.5+. If you have high frustration sensitivity, ambiguous elements should push friction to 0.6+. If you are unforgiving of bad UX, any confusion should score at least 0.5. Conversely, if you are patient and forgiving, you can score lower — the point is that different personas should produce noticeably different scores for the same screen.
 
 IMPORTANT: The screenshot and element list only show what is currently visible in the viewport. If the page is taller than the viewport, there is more content above or below that you haven't seen yet. Check the scroll position above — if you haven't seen the full page and can't find what you need, consider scrolling down before concluding something is missing.
 
@@ -223,19 +223,19 @@ SCROLL STRATEGY:
 
 Also provide an abstract "intent" for report compatibility: one of CLICK_PRIMARY_CTA, CLICK_SECONDARY_CTA, OPEN_NAV, SCROLL, BACK, SEEK_INFO, HESITATE, ABANDON.
 
-Friction scale:
-- 0.0-0.1: Nearly perfect — everything is obvious, no hesitation (extremely rare)
-- 0.2-0.3: Minor issues — small label confusion, slightly cluttered, but workable
-- 0.4-0.5: Noticeable friction — unclear next step, had to think, one real confusion
-- 0.6-0.7: Significant friction — multiple confusions, might consider giving up
-- 0.8-1.0: Severe — nearly impossible to proceed, seriously considering abandoning
+Friction scale (use the FULL range — don't cluster everything around 0.3-0.5):
+- 0.0-0.1: Genuinely flawless — instant clarity, zero thought required (almost never appropriate)
+- 0.2-0.3: Smooth but imperfect — minor label or layout nit, barely noticeable
+- 0.4-0.5: Real friction — had to pause and think, one genuine confusion
+- 0.6-0.7: Frustrating — multiple issues, unclear path, patience tested
+- 0.8-1.0: Broken experience — lost, confused, angry, ready to leave
 
-Dropoff risk scale:
-- 0.0-0.1: Would definitely continue
-- 0.2-0.3: Slightly annoyed but continuing
-- 0.4-0.5: Considering leaving
-- 0.6-0.7: Likely to leave
-- 0.8-1.0: Almost certainly abandoning
+Dropoff risk scale (use the FULL range — match it to your persona's tolerance):
+- 0.0-0.1: Fully engaged, would definitely continue
+- 0.2-0.3: Mildly annoyed but pushing through
+- 0.4-0.5: Patience wearing thin, considering alternatives
+- 0.6-0.7: One more frustration and I'm gone
+- 0.8-1.0: Actively looking for the exit / would abandon right now
 
 Respond as JSON:
 {
