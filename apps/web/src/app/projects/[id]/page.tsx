@@ -467,7 +467,7 @@ export default function ProjectDetail() {
                     {p.traits && (
                       <div className="space-y-1.5">
                         {Object.entries(p.traits).map(([key, val]) => {
-                          if (key === "accessibilityNeeds") return null;
+                          if (key === "accessibilityNeeds" || key === "groupId" || key === "archetype") return null;
                           return (
                             <div key={key} className="flex items-center gap-2">
                               <span className="w-20 text-xs text-muted-foreground truncate capitalize">
