@@ -2,9 +2,11 @@ import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Load .env from repo root
+// Load .env — use DOTENV_PATH if set (e.g. /app/.env in Docker), else repo root
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+dotenv.config({
+  path: process.env.DOTENV_PATH || path.resolve(__dirname, "../../../.env"),
+});
 
 import { Worker } from "bullmq";
 import { QUEUE_NAMES } from "@persona-lab/shared";
@@ -20,7 +22,12 @@ if (!process.env.OPENROUTER_API_KEY) {
   process.exit(1);
 }
 
+const EPISODE_CONCURRENCY = parseInt(process.env.EPISODE_CONCURRENCY || "2", 10);
+const AGENT_CONCURRENCY = parseInt(process.env.AGENT_CONCURRENCY || "2", 10);
+
 const connection = getRedisOpts();
+
+console.log(`Concurrency: episode=${EPISODE_CONCURRENCY}, agent=${AGENT_CONCURRENCY}`);
 
 const simulateEpisodeWorker = new Worker<SimulateEpisodeJob>(
   QUEUE_NAMES.SIMULATE_EPISODE,
@@ -29,7 +36,7 @@ const simulateEpisodeWorker = new Worker<SimulateEpisodeJob>(
     await handleSimulateEpisode(job.data);
     console.log(`[simulate_episode] Done episode ${job.data.episodeId}`);
   },
-  { connection, concurrency: 2 }
+  { connection, concurrency: EPISODE_CONCURRENCY }
 );
 
 const simulateAgentEpisodeWorker = new Worker<SimulateAgentEpisodeJob>(
@@ -39,7 +46,7 @@ const simulateAgentEpisodeWorker = new Worker<SimulateAgentEpisodeJob>(
     await handleSimulateAgentEpisode(job.data);
     console.log(`[simulate_agent_episode] Done episode ${job.data.episodeId}`);
   },
-  { connection, concurrency: 2 }
+  { connection, concurrency: AGENT_CONCURRENCY }
 );
 
 const aggregateReportWorker = new Worker<AggregateReportJob>(
