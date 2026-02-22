@@ -79,79 +79,119 @@ export default function NewRunPage() {
   const canSubmit = selectedFlow && selectedPersonas.length > 0 && !submitting;
 
   return (
-    <div className="max-w-xl space-y-8">
-      <h2 className="text-2xl font-bold text-foreground">New Run</h2>
+    <div className="max-w-xl space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold text-foreground tracking-tight">New Run</h2>
+        <p className="text-[13px] text-muted-foreground/60">Configure and start a simulation run</p>
+      </div>
 
       {/* Flow */}
       <section>
-        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+        <Label className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-widest">
           Flow
         </Label>
-        <div className="mt-2.5 space-y-1.5">
+        <div className="mt-2 space-y-1">
           {flows.map((f) => (
             <button
               key={f.id}
               onClick={() => setSelectedFlow(f.id)}
-              className={`flex w-full items-center justify-between rounded border px-3.5 py-2.5 text-left text-[15px] transition-colors ${
+              className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left text-[13px] transition-colors ${
                 selectedFlow === f.id
                   ? "border-primary bg-primary/5 text-primary"
-                  : "border-border/60 text-foreground hover:border-border"
+                  : "border-border/40 text-foreground hover:border-border/70"
               }`}
             >
-              <span>{f.name}</span>
+              <span className="font-medium">{f.name}</span>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{f._count.frames} frames</span>
-                {selectedFlow === f.id && <Check className="h-4 w-4 text-primary" />}
+                <span className="text-[11px] text-muted-foreground font-mono">{f._count.frames} frames</span>
+                {selectedFlow === f.id && <Check className="h-3.5 w-3.5 text-primary" />}
               </div>
             </button>
           ))}
           {flows.length === 0 && (
-            <p className="text-sm text-muted-foreground py-2">No flows available.</p>
+            <p className="text-[13px] text-muted-foreground/60 py-2">No flows available.</p>
           )}
         </div>
       </section>
 
       {/* Personas */}
       <section>
-        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+        <Label className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-widest">
           Personas
+          {selectedPersonas.length > 0 && (
+            <span className="ml-1 text-primary font-mono">{selectedPersonas.length}</span>
+          )}
         </Label>
-        <div className="mt-2.5 space-y-1.5">
+
+        {/* Group selection chips */}
+        {personas.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            <GroupChip
+              label="All"
+              ids={personas.map((p) => p.id)}
+              selectedPersonas={selectedPersonas}
+              setSelectedPersonas={setSelectedPersonas}
+            />
+            {[...new Set(personas.map((p) => p.gender).filter(Boolean))].map((gender) => (
+              <GroupChip
+                key={gender}
+                label={gender!}
+                ids={personas.filter((p) => p.gender === gender).map((p) => p.id)}
+                selectedPersonas={selectedPersonas}
+                setSelectedPersonas={setSelectedPersonas}
+              />
+            ))}
+            {[...new Set(personas.map((p) => p.ageGroup).filter(Boolean))].map((age) => (
+              <GroupChip
+                key={age}
+                label={age!}
+                ids={personas.filter((p) => p.ageGroup === age).map((p) => p.id)}
+                selectedPersonas={selectedPersonas}
+                setSelectedPersonas={setSelectedPersonas}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="mt-2 space-y-1">
           {personas.map((p) => {
             const selected = selectedPersonas.includes(p.id);
             return (
               <button
                 key={p.id}
                 onClick={() => togglePersona(p.id)}
-                className={`flex w-full items-center justify-between rounded border px-3.5 py-2.5 text-left text-[15px] transition-colors ${
+                className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left text-[13px] transition-colors ${
                   selected
                     ? "border-primary bg-primary/5 text-primary"
-                    : "border-border/60 text-foreground hover:border-border"
+                    : "border-border/40 text-foreground hover:border-border/70"
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span>{p.name}</span>
+                  <span className="font-medium">{p.name}</span>
                   {p.ageGroup && (
-                    <span className="text-sm text-muted-foreground">{p.ageGroup}</span>
+                    <span className="text-[11px] text-muted-foreground/50">{p.ageGroup}</span>
+                  )}
+                  {p.gender && (
+                    <span className="text-[11px] text-muted-foreground/50">{p.gender}</span>
                   )}
                 </div>
-                {selected && <Check className="h-4 w-4 text-primary" />}
+                {selected && <Check className="h-3.5 w-3.5 text-primary" />}
               </button>
             );
           })}
           {personas.length === 0 && (
-            <p className="text-sm text-muted-foreground py-2">No personas available.</p>
+            <p className="text-[13px] text-muted-foreground/60 py-2">No personas available.</p>
           )}
         </div>
       </section>
 
       {/* Config */}
-      <section className="space-y-4">
-        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+      <section className="space-y-3">
+        <Label className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-widest">
           Configuration
         </Label>
         <div className="space-y-1.5">
-          <Label className="text-sm text-foreground">Model</Label>
+          <Label className="text-[13px] text-foreground">Model</Label>
           <Select value={model} onValueChange={setModel}>
             <SelectTrigger>
               <SelectValue />
@@ -169,7 +209,7 @@ export default function NewRunPage() {
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label className="text-sm text-foreground">Max Steps</Label>
+          <Label className="text-[13px] text-foreground">Max Steps</Label>
           <Input
             type="number"
             value={maxSteps}
@@ -181,9 +221,45 @@ export default function NewRunPage() {
         </div>
       </section>
 
-      <Button onClick={startRun} disabled={!canSubmit} className="w-full" size="lg">
+      <Button onClick={startRun} disabled={!canSubmit} className="w-full">
         {submitting ? "Starting..." : "Start Run"}
       </Button>
     </div>
+  );
+}
+
+function GroupChip({
+  label,
+  ids,
+  selectedPersonas,
+  setSelectedPersonas,
+}: {
+  label: string;
+  ids: string[];
+  selectedPersonas: string[];
+  setSelectedPersonas: React.Dispatch<React.SetStateAction<string[]>>;
+}) {
+  const allSelected = ids.length > 0 && ids.every((id) => selectedPersonas.includes(id));
+
+  function toggle() {
+    if (allSelected) {
+      setSelectedPersonas((prev) => prev.filter((id) => !ids.includes(id)));
+    } else {
+      setSelectedPersonas((prev) => [...new Set([...prev, ...ids])]);
+    }
+  }
+
+  return (
+    <button
+      onClick={toggle}
+      className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+        allSelected
+          ? "border-primary bg-primary/8 text-primary"
+          : "border-border/40 text-muted-foreground/60 hover:border-border/70 hover:text-foreground"
+      }`}
+    >
+      {label}
+      <span className="font-mono opacity-50">{ids.length}</span>
+    </button>
   );
 }

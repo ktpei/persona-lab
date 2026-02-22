@@ -219,12 +219,19 @@ export default function PersonasPage() {
 
   return (
     <div className="space-y-8">
-      <h2 className="text-2xl font-bold text-foreground">Manage Personas</h2>
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold text-foreground tracking-tight">Manage Personas</h2>
+        <p className="text-[13px] text-muted-foreground/60">
+          {personas.length > 0
+            ? <><span className="font-mono">{personas.length}</span> persona{personas.length !== 1 ? "s" : ""} created</>
+            : "Create personas to simulate user behavior"}
+        </p>
+      </div>
 
       <Tabs defaultValue="batch">
-        <TabsList>
-          <TabsTrigger value="batch">Batch Generate</TabsTrigger>
-          <TabsTrigger value="manual">Manual</TabsTrigger>
+        <TabsList className="w-full justify-start">
+          <TabsTrigger value="batch" className="text-[13px]">Batch Generate</TabsTrigger>
+          <TabsTrigger value="manual" className="text-[13px]">Manual</TabsTrigger>
         </TabsList>
 
         {/* ===== Batch Tab ===== */}
@@ -232,32 +239,32 @@ export default function PersonasPage() {
           <div className="max-w-5xl space-y-6 pt-2">
             {/* Group selector */}
             <div className="space-y-2">
-              <Label className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+              <Label className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
                 Select Groups
               </Label>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {PERSONA_GROUPS.map((group) => {
                   const selected = selectedGroupIds.includes(group.id);
                   return (
                     <button
                       key={group.id}
                       onClick={() => toggleGroup(group.id)}
-                      className={`relative rounded border p-3 text-left transition-colors ${
+                      className={`relative rounded border p-3 text-left transition-all ${
                         selected
                           ? "border-primary bg-primary/5"
-                          : "border-border/60 hover:border-border"
+                          : "border-border/40 hover:border-border/70"
                       }`}
                     >
                       {selected && (
-                        <div className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-sm bg-primary">
+                        <div className="absolute right-2.5 top-2.5 flex h-4 w-4 items-center justify-center rounded bg-primary">
                           <Check className="h-3 w-3 text-primary-foreground" />
                         </div>
                       )}
-                      <p className="text-[15px] font-medium text-foreground pr-5">{group.label}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                      <p className="text-[13px] font-medium text-foreground pr-5">{group.label}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground/60 line-clamp-2 leading-relaxed">
                         {group.description}
                       </p>
-                      <p className="mt-1.5 text-[10px] text-muted-foreground/60">
+                      <p className="mt-2 text-[10px] text-muted-foreground/40 font-mono">
                         {group.archetypes.length} archetypes
                       </p>
                     </button>
@@ -269,10 +276,10 @@ export default function PersonasPage() {
             {/* Archetypes panel */}
             {selectedGroupIds.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                  Archetypes ({enabledCount} enabled)
+                <Label className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/50">
+                  Archetypes <span className="font-mono text-foreground/60">{enabledCount}</span>
                 </Label>
-                <div className="max-h-80 overflow-y-auto rounded border border-border/60 divide-y divide-border/40">
+                <div className="max-h-80 overflow-y-auto rounded border border-border/40 divide-y divide-border/30">
                   {selectedGroupIds.map((groupId) => {
                     const group = PERSONA_GROUPS.find((g) => g.id === groupId);
                     if (!group) return null;
@@ -503,16 +510,19 @@ export default function PersonasPage() {
       {/* Existing personas */}
       {personas.length > 0 && (
         <section>
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            All Personas ({personas.length})
-          </h3>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-widest">
+              All Personas
+            </h3>
+            <span className="text-[11px] font-mono text-muted-foreground/40">{personas.length}</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
             {personas.map((p) => {
               const t = p.traits;
               return (
                 <div
                   key={p.id}
-                  className="group rounded border border-border/60 p-4 hover:border-border transition-colors"
+                  className="group rounded border border-border/40 p-4 hover:border-border/70 transition-colors"
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div>
@@ -551,17 +561,17 @@ export default function PersonasPage() {
                     <div className="space-y-1.5">
                       {TRAIT_KEYS.map((key) => (
                         <div key={key} className="flex items-center gap-2">
-                          <span className="w-20 text-xs text-muted-foreground truncate">
+                          <span className="w-20 text-[11px] text-muted-foreground/60 truncate">
                             {TRAIT_LABELS[key].label}
                           </span>
-                          <div className="flex-1 h-1 rounded-full bg-border/60">
+                          <div className="flex-1 h-1 rounded-full bg-border/40">
                             <div
-                              className="h-full rounded-full bg-primary/60"
+                              className="h-full rounded-full bg-primary/50"
                               style={{ width: `${(t[key] ?? 0) * 100}%` }}
                             />
                           </div>
-                          <span className="w-7 text-right text-[11px] text-muted-foreground tabular-nums">
-                            {(t[key] ?? 0).toFixed(1)}
+                          <span className="w-7 text-right text-[10px] font-mono text-muted-foreground/40 tabular-nums">
+                            {((t[key] ?? 0) * 100).toFixed(0)}
                           </span>
                         </div>
                       ))}
@@ -575,12 +585,12 @@ export default function PersonasPage() {
       )}
 
       {personas.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded border border-dashed border-border/60 py-16">
-          <div className="flex h-12 w-12 items-center justify-center rounded border border-border bg-muted">
-            <Users className="h-5 w-5 text-muted-foreground" />
+        <div className="flex flex-col items-center justify-center rounded border border-dashed border-border/40 py-16">
+          <div className="flex h-10 w-10 items-center justify-center rounded bg-muted">
+            <Users className="h-4 w-4 text-muted-foreground" />
           </div>
           <p className="mt-4 text-[15px] font-medium text-foreground">No personas yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-[13px] text-muted-foreground">
             Create personas manually or generate a batch.
           </p>
         </div>

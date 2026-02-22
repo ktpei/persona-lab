@@ -14,6 +14,7 @@ enum RunStatus {
   AGGREGATING
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 enum EpisodeStatus {
@@ -22,6 +23,7 @@ enum EpisodeStatus {
   COMPLETED
   ABANDONED
   FAILED
+  CANCELLED
 }
 
 enum RunMode {
@@ -92,8 +94,9 @@ model Run {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   personas   RunPersona[]
-  episodes   Episode[]
-  findings   Finding[]
+  episodes           Episode[]
+  findings           Finding[]
+  focusGroupSessions FocusGroupSession[]
 }
 
 model RunPersona {
@@ -150,4 +153,12 @@ model Finding {
   stepIndex        Int?
   screenUrl        String?
   recommendedFix   String?
+}
+
+model FocusGroupSession {
+  id         String   @id @default(cuid())
+  runId      String
+  run        Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  transcript Json
+  createdAt  DateTime @default(now())
 }

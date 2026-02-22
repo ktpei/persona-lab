@@ -11,6 +11,11 @@ import {
 import type { SimulateEpisodeJob, AggregateReportJob } from "@persona-lab/shared";
 import type { Prisma } from "@prisma/client";
 
+async function isRunCancelled(runId: string): Promise<boolean> {
+  const run = await prisma.run.findUnique({ where: { id: runId }, select: { status: true } });
+  return run?.status === "CANCELLED";
+}
+
 function buildReasoningPrompt(
   personaContext: string,
   flowName: string,
@@ -99,6 +104,13 @@ export async function handleSimulateEpisode(job: SimulateEpisodeJob) {
   });
   if (!episode) throw new Error(`Episode ${job.episodeId} not found`);
 
+  // Skip if episode was already cancelled (bulk update from cancel API)
+  if (episode.status === "CANCELLED") {
+    console.log(`${tag} Episode already cancelled, skipping`);
+    await checkAndAdvanceRun(job.runId);
+    return;
+  }
+
   // Mark episode as running
   await prisma.episode.update({
     where: { id: episode.id },
@@ -130,7 +142,7 @@ export async function handleSimulateEpisode(job: SimulateEpisodeJob) {
 
   let currentStep = 0;
   let memory: string | null = null;
-  let episodeStatus: "COMPLETED" | "ABANDONED" | "FAILED" = "COMPLETED";
+  let episodeStatus: "COMPLETED" | "ABANDONED" | "FAILED" | "CANCELLED" = "COMPLETED";
   let sameFrameCount = 0;
   let scrollCountOnFrame = 0;
   let prevStep = -1;
@@ -140,6 +152,13 @@ export async function handleSimulateEpisode(job: SimulateEpisodeJob) {
   for (let stepIdx = 0; stepIdx < job.maxSteps; stepIdx++) {
     const frame = frames[currentStep];
     if (!frame) break;
+
+    // Check for run cancellation
+    if (await isRunCancelled(job.runId)) {
+      console.log(`${tag} Step ${stepIdx}: run cancelled, stopping episode`);
+      episodeStatus = "CANCELLED";
+      break;
+    }
 
     // Track how many times we've stayed on the same frame
     if (currentStep === prevStep) {
@@ -259,6 +278,15 @@ export async function handleSimulateEpisode(job: SimulateEpisodeJob) {
 }
 
 async function checkAndAdvanceRun(runId: string) {
+  const rtag = `[run:${runId.slice(0, 8)}]`;
+
+  // Don't advance if run was cancelled
+  const run = await prisma.run.findUnique({ where: { id: runId }, select: { status: true } });
+  if (run?.status === "CANCELLED") {
+    console.log(`${rtag} Run is cancelled, skipping aggregation check`);
+    return;
+  }
+
   const pendingOrRunning = await prisma.episode.count({
     where: {
       runId,
@@ -266,9 +294,13 @@ async function checkAndAdvanceRun(runId: string) {
     },
   });
 
-  if (pendingOrRunning > 0) return;
+  if (pendingOrRunning > 0) {
+    console.log(`${rtag} ${pendingOrRunning} episode(s) still pending/running`);
+    return;
+  }
 
   // All episodes done — advance to aggregation
+  console.log(`${rtag} All episodes complete — advancing to AGGREGATING`);
   await prisma.run.update({
     where: { id: runId },
     data: { status: "AGGREGATING" },
@@ -279,4 +311,5 @@ async function checkAndAdvanceRun(runId: string) {
   const job: AggregateReportJob = { runId };
   await aggregateQueue.add(QUEUE_NAMES.AGGREGATE_REPORT, job);
   await aggregateQueue.close();
+  console.log(`${rtag} Aggregation job enqueued`);
 }

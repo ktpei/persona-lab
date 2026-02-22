@@ -24,7 +24,6 @@ import {
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@persona-lab/shared";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Pencil,
   Plus,
   Play,
   Workflow,
@@ -33,6 +32,8 @@ import {
   Trash2,
   Check,
   AlertTriangle,
+  ArrowRight,
+  ChevronRight,
 } from "lucide-react";
 import { VoiceSessionPanel } from "@/components/voice/VoiceSessionPanel";
 import { FocusGroupSession } from "@/components/voice/FocusGroupSession";
@@ -71,13 +72,13 @@ interface Project {
   description: string | null;
 }
 
-const statusStyles: Record<string, string> = {
-  PENDING: "bg-muted text-muted-foreground",
-  PARSING: "bg-muted text-muted-foreground",
-  SIMULATING: "bg-primary/15 text-primary",
-  AGGREGATING: "bg-primary/15 text-primary",
-  COMPLETED: "bg-primary/15 text-primary",
-  FAILED: "bg-destructive/15 text-destructive",
+const statusColor: Record<string, string> = {
+  PENDING: "secondary",
+  PARSING: "secondary",
+  SIMULATING: "default",
+  AGGREGATING: "default",
+  COMPLETED: "success",
+  FAILED: "destructive",
 };
 
 // ---------- Page ----------
@@ -218,18 +219,22 @@ export default function ProjectDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Project title + CTA */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-foreground">{project?.name ?? "..."}</h2>
-          <Pencil className="h-4 w-4 text-muted-foreground/40" />
+      {/* Project header */}
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-bold text-foreground tracking-tight">
+            {project?.name ?? "..."}
+          </h2>
+          {project?.description && (
+            <p className="text-[13px] text-muted-foreground/70 max-w-lg">{project.description}</p>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="gap-1.5 text-[13px] text-muted-foreground hover:text-destructive"
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -237,33 +242,45 @@ export default function ProjectDetail() {
           </Button>
           <Button
             variant="outline"
-            className="gap-2 border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
+            size="sm"
+            className="gap-1.5 text-[13px]"
             onClick={() => setFocusGroupOpen(true)}
           >
             <Users className="h-3.5 w-3.5" />
-            Start Focus Group Session
+            Focus Group
           </Button>
           <Button
-            variant="outline"
-            className="gap-2 border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
+            size="sm"
+            className="gap-1.5 text-[13px]"
             onClick={() => setRunOpen(true)}
           >
             <Plus className="h-3.5 w-3.5" />
-            Create Run
+            New Run
           </Button>
         </div>
       </div>
 
-      {project?.description && (
-        <p className="text-sm text-muted-foreground -mt-3">{project.description}</p>
-      )}
-
-      {/* Tabs — Flows, Personas, Runs */}
+      {/* Tabs */}
       <Tabs defaultValue="personas">
-        <TabsList>
-          <TabsTrigger value="personas">Personas</TabsTrigger>
-          <TabsTrigger value="flows">Flows</TabsTrigger>
-          <TabsTrigger value="runs">Runs</TabsTrigger>
+        <TabsList className="w-full justify-start">
+          <TabsTrigger value="personas" className="text-[13px]">
+            Personas
+            {personas.length > 0 && (
+              <span className="ml-1.5 text-[11px] font-mono text-muted-foreground">{personas.length}</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="flows" className="text-[13px]">
+            Flows
+            {flows.length > 0 && (
+              <span className="ml-1.5 text-[11px] font-mono text-muted-foreground">{flows.length}</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="runs" className="text-[13px]">
+            Runs
+            {runs.length > 0 && (
+              <span className="ml-1.5 text-[11px] font-mono text-muted-foreground">{runs.length}</span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* ===== Flows Tab ===== */}
@@ -272,7 +289,7 @@ export default function ProjectDetail() {
             <EmptyState
               icon={Workflow}
               title="No flows yet"
-              description="Create your first flow."
+              description="Flows define the UX paths your personas will navigate."
               actionLabel="Create Flow"
               onAction={() => setFlowOpen(true)}
             />
@@ -282,43 +299,50 @@ export default function ProjectDetail() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1.5 text-sm"
+                  className="gap-1.5 text-[13px]"
                   onClick={() => setFlowOpen(true)}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   New Flow
                 </Button>
               </div>
-              <div className="divide-y divide-border/40">
+              <div className="rounded border border-border/40 divide-y divide-border/30 overflow-hidden">
                 {flows.map((f) => (
                   <Link key={f.id} href={f.mode === "AGENT" ? "#" : `/projects/${projectId}/flows/${f.id}`}>
-                    <div className="group flex items-center justify-between py-3 px-2 hover:bg-muted/40 rounded transition-colors">
+                    <div className="group flex items-center justify-between py-3 px-4 hover:bg-muted/30 transition-colors">
                       <div className="flex items-center gap-3">
-                        {f.mode === "AGENT" ? (
-                          <Globe className="h-4 w-4 text-primary/70" />
-                        ) : (
-                          <Workflow className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        <span className="text-[15px] text-foreground group-hover:text-primary transition-colors">
-                          {f.name}
-                        </span>
-                        {f.mode === "AGENT" && f.url && (
-                          <span className="text-xs text-muted-foreground truncate max-w-48">
-                            {f.url}
+                        <div className="flex h-7 w-7 items-center justify-center rounded bg-muted/60">
+                          {f.mode === "AGENT" ? (
+                            <Globe className="h-3.5 w-3.5 text-primary/70" />
+                          ) : (
+                            <Workflow className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[13px] font-medium text-foreground group-hover:text-primary transition-colors">
+                            {f.name}
                           </span>
-                        )}
+                          {f.mode === "AGENT" && f.url && (
+                            <span className="ml-2 text-[11px] text-muted-foreground/50 font-mono truncate max-w-48 inline-block align-middle">
+                              {f.url}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {f.mode === "AGENT" ? (
-                        <Badge variant="secondary" className="text-[11px] font-normal">
-                          Agent
-                        </Badge>
-                      ) : (
-                        f._count && (
-                          <span className="text-sm text-muted-foreground">
-                            {f._count.frames} frames
-                          </span>
-                        )
-                      )}
+                      <div className="flex items-center gap-2">
+                        {f.mode === "AGENT" ? (
+                          <Badge variant="outline" className="text-[10px]">
+                            Agent
+                          </Badge>
+                        ) : (
+                          f._count && (
+                            <span className="text-[12px] text-muted-foreground font-mono">
+                              {f._count.frames} frames
+                            </span>
+                          )
+                        )}
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors" />
+                      </div>
                     </div>
                   </Link>
                 ))}
@@ -329,42 +353,42 @@ export default function ProjectDetail() {
           <Dialog open={flowOpen} onOpenChange={setFlowOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create Flow</DialogTitle>
+                <DialogTitle>Create flow</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
                 {/* Mode toggle */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                  <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
                     Mode
                   </Label>
                   <div className="flex gap-2">
                     <button
                       onClick={() => setFlowMode("SCREENSHOT")}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded border px-3 py-2.5 text-[15px] transition-colors ${
+                      className={`flex-1 flex items-center justify-center gap-2 rounded border px-3 py-2 text-[13px] transition-colors ${
                         flowMode === "SCREENSHOT"
                           ? "border-primary bg-primary/5 text-primary"
                           : "border-border/60 text-foreground hover:border-border"
                       }`}
                     >
-                      <Workflow className="h-4 w-4" />
-                      Upload Screenshots
+                      <Workflow className="h-3.5 w-3.5" />
+                      Screenshots
                     </button>
                     <button
                       onClick={() => setFlowMode("AGENT")}
-                      className={`flex-1 flex items-center justify-center gap-2 rounded border px-3 py-2.5 text-[15px] transition-colors ${
+                      className={`flex-1 flex items-center justify-center gap-2 rounded border px-3 py-2 text-[13px] transition-colors ${
                         flowMode === "AGENT"
                           ? "border-primary bg-primary/5 text-primary"
                           : "border-border/60 text-foreground hover:border-border"
                       }`}
                     >
-                      <Globe className="h-4 w-4" />
+                      <Globe className="h-3.5 w-3.5" />
                       Website URL
                     </button>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="flowName">Name</Label>
+                  <Label htmlFor="flowName" className="text-[13px]">Name</Label>
                   <Input
                     id="flowName"
                     value={flowName}
@@ -376,7 +400,7 @@ export default function ProjectDetail() {
                 {flowMode === "AGENT" && (
                   <>
                     <div className="space-y-1.5">
-                      <Label htmlFor="flowUrl">Website URL</Label>
+                      <Label htmlFor="flowUrl" className="text-[13px]">Website URL</Label>
                       <Input
                         id="flowUrl"
                         type="url"
@@ -386,7 +410,7 @@ export default function ProjectDetail() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="flowGoal">Goal</Label>
+                      <Label htmlFor="flowGoal" className="text-[13px]">Goal</Label>
                       <Textarea
                         id="flowGoal"
                         value={flowGoal}
@@ -419,7 +443,7 @@ export default function ProjectDetail() {
             <EmptyState
               icon={Users}
               title="No personas yet"
-              description="Create personas to simulate user behavior."
+              description="Create AI personas to simulate real user behavior on your flows."
               actionLabel="Manage Personas"
               onAction={() => router.push(`/projects/${projectId}/personas`)}
             />
@@ -427,41 +451,46 @@ export default function ProjectDetail() {
             <>
               <div className="flex justify-end mb-3">
                 <Link href={`/projects/${projectId}/personas`}>
-                  <Button size="sm" variant="outline" className="gap-1.5 text-sm">
+                  <Button size="sm" variant="outline" className="gap-1.5 text-[13px]">
                     <Plus className="h-3.5 w-3.5" />
                     Manage Personas
                   </Button>
                 </Link>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 {personas.map((p) => (
                   <div
                     key={p.id}
-                    className="group rounded border border-border/60 p-4 hover:border-border transition-colors"
+                    className="group rounded border border-border/40 p-4 hover:border-border/70 transition-colors"
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="text-[15px] font-medium text-foreground">{p.name}</p>
-                        {(p.ageGroup || p.gender) && (
-                          <div className="flex gap-1 mt-1">
-                            {p.ageGroup && (
-                              <Badge variant="secondary" className="text-[11px] font-normal">
-                                {p.ageGroup}
-                              </Badge>
-                            )}
-                            {p.gender && (
-                              <Badge variant="secondary" className="text-[11px] font-normal">
-                                {p.gender}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-[11px] font-semibold text-primary">
+                          {p.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-[13px] font-medium text-foreground">{p.name}</p>
+                          {(p.ageGroup || p.gender) && (
+                            <div className="flex gap-1 mt-0.5">
+                              {p.ageGroup && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  {p.ageGroup}
+                                </Badge>
+                              )}
+                              {p.gender && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  {p.gender}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <button
                         onClick={() => deletePersona(p.id)}
-                        className="rounded p-1 text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
+                        className="rounded p-1 text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     {p.traits && (
@@ -470,15 +499,18 @@ export default function ProjectDetail() {
                           if (key === "accessibilityNeeds" || key === "groupId" || key === "archetype") return null;
                           return (
                             <div key={key} className="flex items-center gap-2">
-                              <span className="w-20 text-xs text-muted-foreground truncate capitalize">
+                              <span className="w-20 text-[11px] text-muted-foreground/60 truncate capitalize">
                                 {key.replace(/([A-Z])/g, " $1").trim()}
                               </span>
-                              <div className="flex-1 h-1 rounded-full bg-border/60">
+                              <div className="flex-1 h-1 rounded-full bg-border/40">
                                 <div
-                                  className="h-full rounded-full bg-primary/60"
+                                  className="h-full rounded-full bg-primary/50"
                                   style={{ width: `${(Number(val) ?? 0) * 100}%` }}
                                 />
                               </div>
+                              <span className="text-[10px] font-mono text-muted-foreground/40 w-6 text-right">
+                                {(Number(val) * 100).toFixed(0)}
+                              </span>
                             </div>
                           );
                         })}
@@ -497,25 +529,32 @@ export default function ProjectDetail() {
             <EmptyState
               icon={Play}
               title="No runs yet"
-              description="Create your first run."
-              actionLabel="Create Run"
+              description="Start a simulation run to test your flows with personas."
+              actionLabel="New Run"
               onAction={() => setRunOpen(true)}
             />
           ) : (
-            <div className="divide-y divide-border/40">
+            <div className="rounded border border-border/40 divide-y divide-border/30 overflow-hidden">
               {runs.map((r) => (
                 <Link key={r.id} href={`/projects/${projectId}/runs/${r.id}`}>
-                  <div className="group flex items-center justify-between py-3 px-2 hover:bg-muted/40 rounded transition-colors">
+                  <div className="group flex items-center justify-between py-3 px-4 hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-3">
-                      <Play className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-[15px] text-foreground group-hover:text-primary transition-colors">
-                        Run {r.id.slice(0, 8)}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {new Date(r.createdAt).toLocaleDateString()}
-                      </span>
+                      <div className="flex h-7 w-7 items-center justify-center rounded bg-muted/60">
+                        <Play className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <span className="text-[13px] font-medium text-foreground group-hover:text-primary transition-colors font-mono">
+                          {r.id.slice(0, 8)}
+                        </span>
+                        <span className="ml-2 text-[12px] text-muted-foreground/50">
+                          {new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
                     </div>
-                    <StatusPill status={r.status} />
+                    <div className="flex items-center gap-2">
+                      <StatusPill status={r.status} />
+                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors" />
+                    </div>
                   </div>
                 </Link>
               ))}
@@ -529,25 +568,26 @@ export default function ProjectDetail() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Delete Project
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              Delete project
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <p className="text-[15px] text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground leading-relaxed">
               Are you sure you want to delete <span className="font-medium text-foreground">{project?.name}</span>?
-              This will permanently remove all flows, personas, runs, and findings associated with this project.
+              This will permanently remove all flows, personas, runs, and findings.
             </p>
-            <div className="flex gap-3 justify-end">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setDeleteOpen(false)}>
                 Cancel
               </Button>
               <Button
                 variant="destructive"
+                size="sm"
                 onClick={deleteProject}
                 disabled={deleting}
               >
-                {deleting ? "Deleting..." : "Delete Project"}
+                {deleting ? "Deleting..." : "Delete"}
               </Button>
             </div>
           </div>
@@ -602,23 +642,23 @@ export default function ProjectDetail() {
       <Dialog open={runOpen} onOpenChange={setRunOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Create Run</DialogTitle>
+            <DialogTitle>New run</DialogTitle>
           </DialogHeader>
-          <div className="space-y-6 pt-2 max-h-[70vh] overflow-y-auto">
+          <div className="space-y-5 pt-2 max-h-[70vh] overflow-y-auto">
             {/* Flow selection */}
             <section>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+              <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
                 Flow
               </Label>
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-2 space-y-1">
                 {flows.map((f) => (
                   <button
                     key={f.id}
                     onClick={() => setSelectedFlow(f.id)}
-                    className={`flex w-full items-center justify-between rounded border px-3.5 py-2.5 text-left text-[15px] transition-colors ${
+                    className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left text-[13px] transition-colors ${
                       selectedFlow === f.id
                         ? "border-primary bg-primary/5 text-primary"
-                        : "border-border/60 text-foreground hover:border-border"
+                        : "border-border/40 text-foreground hover:border-border/70"
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -631,65 +671,68 @@ export default function ProjectDetail() {
                     </div>
                     <div className="flex items-center gap-2">
                       {f.mode === "AGENT" ? (
-                        <Badge variant="secondary" className="text-[11px] font-normal">Agent</Badge>
+                        <Badge variant="outline" className="text-[10px]">Agent</Badge>
                       ) : (
                         f._count && (
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-[11px] text-muted-foreground font-mono">
                             {f._count.frames} frames
                           </span>
                         )
                       )}
-                      {selectedFlow === f.id && <Check className="h-4 w-4 text-primary" />}
+                      {selectedFlow === f.id && <Check className="h-3.5 w-3.5 text-primary" />}
                     </div>
                   </button>
                 ))}
                 {flows.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-2">No flows available.</p>
+                  <p className="text-[13px] text-muted-foreground/60 py-2">No flows available.</p>
                 )}
               </div>
             </section>
 
             {/* Persona selection */}
             <section>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+              <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
                 Personas
+                {selectedPersonas.length > 0 && (
+                  <span className="ml-1 text-primary font-mono">{selectedPersonas.length}</span>
+                )}
               </Label>
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-2 space-y-1">
                 {personas.map((p) => {
                   const selected = selectedPersonas.includes(p.id);
                   return (
                     <button
                       key={p.id}
                       onClick={() => togglePersona(p.id)}
-                      className={`flex w-full items-center justify-between rounded border px-3.5 py-2.5 text-left text-[15px] transition-colors ${
+                      className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left text-[13px] transition-colors ${
                         selected
                           ? "border-primary bg-primary/5 text-primary"
-                          : "border-border/60 text-foreground hover:border-border"
+                          : "border-border/40 text-foreground hover:border-border/70"
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         <span>{p.name}</span>
                         {p.ageGroup && (
-                          <span className="text-sm text-muted-foreground">{p.ageGroup}</span>
+                          <span className="text-[11px] text-muted-foreground/50">{p.ageGroup}</span>
                         )}
                       </div>
-                      {selected && <Check className="h-4 w-4 text-primary" />}
+                      {selected && <Check className="h-3.5 w-3.5 text-primary" />}
                     </button>
                   );
                 })}
                 {personas.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-2">No personas available.</p>
+                  <p className="text-[13px] text-muted-foreground/60 py-2">No personas available.</p>
                 )}
               </div>
             </section>
 
             {/* Config */}
-            <section className="space-y-4">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+            <section className="space-y-3">
+              <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
                 Configuration
               </Label>
               <div className="space-y-1.5">
-                <Label className="text-sm text-foreground">Model</Label>
+                <Label className="text-[13px] text-foreground">Model</Label>
                 <Select value={model} onValueChange={setModel}>
                   <SelectTrigger>
                     <SelectValue />
@@ -707,7 +750,7 @@ export default function ProjectDetail() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-sm text-foreground">Max Steps</Label>
+                <Label className="text-[13px] text-foreground">Max Steps</Label>
                 <Input
                   type="number"
                   value={maxSteps}
@@ -719,7 +762,7 @@ export default function ProjectDetail() {
               </div>
             </section>
 
-            <Button onClick={startRun} disabled={!canSubmitRun} className="w-full" size="lg">
+            <Button onClick={startRun} disabled={!canSubmitRun} className="w-full">
               {submitting ? "Starting..." : "Start Run"}
             </Button>
           </div>
@@ -745,15 +788,16 @@ function EmptyState({
   onAction: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded border border-dashed border-border/60 py-16">
-      <div className="flex h-11 w-11 items-center justify-center rounded border border-border bg-muted">
-        <Icon className="h-5 w-5 text-muted-foreground" />
+    <div className="flex flex-col items-center justify-center rounded border border-dashed border-border/40 py-16">
+      <div className="flex h-10 w-10 items-center justify-center rounded bg-muted">
+        <Icon className="h-4 w-4 text-muted-foreground" />
       </div>
       <p className="mt-4 text-[15px] font-medium text-foreground">{title}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
       <Button
+        size="sm"
         variant="outline"
-        className="mt-5 border-primary/40 text-primary hover:bg-primary/5"
+        className="mt-4"
         onClick={onAction}
       >
         {actionLabel}
@@ -763,13 +807,10 @@ function EmptyState({
 }
 
 function StatusPill({ status }: { status: string }) {
+  const variant = (statusColor[status] ?? "secondary") as "default" | "secondary" | "destructive" | "outline" | "success";
   return (
-    <span
-      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
-        statusStyles[status] ?? "bg-muted text-muted-foreground"
-      }`}
-    >
+    <Badge variant={variant} className="text-[10px] uppercase tracking-wider">
       {status}
-    </span>
+    </Badge>
   );
 }

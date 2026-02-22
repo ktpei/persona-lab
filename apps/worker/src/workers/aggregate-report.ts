@@ -35,7 +35,7 @@ function similarity(a: string, b: string): number {
 
 function clusterConfusions(entries: ConfusionEntry[]): ClusteredIssue[] {
   const clusters: ClusteredIssue[] = [];
-  const threshold = 0.4;
+  const threshold = 0.25;
 
   for (const entry of entries) {
     let bestCluster: ClusteredIssue | null = null;
@@ -60,6 +60,9 @@ function clusterConfusions(entries: ConfusionEntry[]): ClusteredIssue[] {
 }
 
 export async function handleAggregateReport(job: AggregateReportJob) {
+  const tag = `[aggregate:${job.runId.slice(0, 8)}]`;
+  console.log(`${tag} Starting report aggregation`);
+
   const run = await prisma.run.findUnique({
     where: { id: job.runId },
     include: {
@@ -76,6 +79,10 @@ export async function handleAggregateReport(job: AggregateReportJob) {
   });
 
   if (!run) throw new Error(`Run ${job.runId} not found`);
+
+  const totalSteps = run.episodes.reduce((sum, ep) => sum + ep.steps.length, 0);
+  const epStatuses = run.episodes.map(ep => `${ep.persona.name}:${ep.status}`).join(", ");
+  console.log(`${tag} ${run.episodes.length} episodes (${epStatuses}), ${totalSteps} total steps`);
 
   // Collect all confusions from all step traces
   const allConfusions: ConfusionEntry[] = [];
@@ -186,7 +193,8 @@ export async function handleAggregateReport(job: AggregateReportJob) {
         cluster.entries.reduce((sum, e) => sum + e.friction, 0) / frequency;
       const avgDropoff =
         cluster.entries.reduce((sum, e) => sum + e.dropoffRisk, 0) / frequency;
-      const severity = frequency * avgDropoff * avgFriction;
+      // sqrt scaling prevents low individual scores from compounding to near-zero
+      const severity = Math.sqrt(frequency) * (avgDropoff + avgFriction) / 2;
       const affectedPersonas = [
         ...new Set(cluster.entries.map((e) => e.personaName)),
       ];
@@ -206,6 +214,12 @@ export async function handleAggregateReport(job: AggregateReportJob) {
   }
 
   findings.sort((a, b) => b.severity - a.severity);
+
+  console.log(`${tag} Collected ${allConfusions.length} total confusions across ${confusionsByFrame.size} screens`);
+  console.log(`${tag} Clustered into ${findings.length} findings`);
+  for (const f of findings.slice(0, 5)) {
+    console.log(`${tag}   Finding: "${f.issue.slice(0, 80)}" severity=${f.severity.toFixed(3)} freq=${f.frequency} personas=${f.affectedPersonas.join(",")}`);
+  }
 
   // Try to get LLM-generated fixes for top findings
   const config = run.config as { model?: string };
@@ -394,4 +408,6 @@ Respond as JSON:
       reportJson: reportJson as unknown as Prisma.InputJsonValue,
     },
   });
+
+  console.log(`${tag} Report saved — ${enrichedFindings.length} findings, avgFriction=${avgFriction.toFixed(3)}, completed=${completedEpisodes}/${totalEpisodes}, ${perScreen.length} screens`);
 }

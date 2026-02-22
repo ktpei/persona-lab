@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bell, Sun, Moon } from "lucide-react";
+import { Sun, Moon, Command } from "lucide-react";
 
 interface Crumb {
   label: string;
@@ -60,38 +60,41 @@ export function TopHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-border/50 bg-background px-6">
-      {/* Breadcrumbs */}
-      <nav className="flex items-center gap-2 text-sm">
+    <header className="sticky top-0 z-20 flex h-11 items-center justify-between border-b border-border/40 bg-background/80 backdrop-blur-sm px-6">
+      {/* Breadcrumbs — Figma/Stripe style with / separator */}
+      <nav className="flex items-center gap-1 text-[13px]">
         {crumbs.map((crumb, i) => (
-          <span key={i} className="flex items-center gap-2">
+          <span key={i} className="flex items-center gap-1">
             {i > 0 && (
-              <span className="text-muted-foreground/40 select-none">&rsaquo;</span>
+              <span className="text-muted-foreground/30 select-none font-mono text-xs">/</span>
             )}
             {crumb.href ? (
               <Link
                 href={crumb.href}
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="text-muted-foreground/70 hover:text-foreground transition-colors"
               >
                 {crumb.label}
               </Link>
             ) : (
-              <span className="text-muted-foreground">{crumb.label}</span>
+              <span className="text-foreground font-medium">{crumb.label}</span>
             )}
           </span>
         ))}
       </nav>
 
-      <div className="flex items-center gap-1">
+      {/* Actions */}
+      <div className="flex items-center gap-0.5">
+        {/* Command hint */}
+        <div className="hidden sm:flex items-center gap-1.5 mr-2 px-2 py-1 rounded border border-border/40 text-[11px] text-muted-foreground/40 font-mono">
+          <Command className="h-3 w-3" />
+          <span>K</span>
+        </div>
         <button
           onClick={toggleTheme}
-          className="rounded p-1.5 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+          className="rounded p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-muted/40 transition-colors"
           title={dark ? "Switch to light mode" : "Switch to dark mode"}
         >
-          {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-        <button className="rounded p-1.5 text-muted-foreground/60 hover:text-muted-foreground transition-colors">
-          <Bell className="h-4 w-4" />
+          {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
         </button>
       </div>
     </header>
