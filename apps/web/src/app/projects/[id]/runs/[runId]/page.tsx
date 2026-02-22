@@ -144,6 +144,7 @@ export default function RunDetail() {
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [screenMap, setScreenMap] = useState<Map<number, { stepId: string; screenLabel?: string }>>(new Map());
 
   const loadRun = useCallback(() => {
     fetch(`/api/runs/${runId}`)
@@ -175,6 +176,14 @@ export default function RunDetail() {
       .then((data) => setOverview(data.overview ?? null))
       .catch(() => {})
       .finally(() => setOverviewLoading(false));
+    fetch(`/api/runs/${runId}/screenshots`)
+      .then((r) => r.json())
+      .then((data) => {
+        const map = new Map<number, { stepId: string; screenLabel?: string }>();
+        for (const s of data.screens ?? []) map.set(s.screenIndex, { stepId: s.stepId, screenLabel: s.screenLabel });
+        setScreenMap(map);
+      })
+      .catch(() => {});
   }, [run?.status, runId]);
 
   async function togglePersonaExpand(personaId: string, episodeId: string) {
@@ -296,6 +305,37 @@ export default function RunDetail() {
         screenUrl: null,
         recommendedFix: f.recommendedFix ?? null,
       }));
+
+  // Build lookup: screenUrl → screenshot stepId for finding thumbnails
+  const screenUrlToStepId = new Map<string, string>();
+  for (const [, entry] of screenMap) {
+    if (entry.screenLabel) screenUrlToStepId.set(entry.screenLabel, entry.stepId);
+  }
+
+  function findingScreenshot(finding: (typeof displayFindings)[number]): string | null {
+    // Try matching screenUrl against the screenshots map
+    if (finding.screenUrl) {
+      const stepId = screenUrlToStepId.get(finding.screenUrl);
+      if (stepId) return `/api/steps/${stepId}/screenshot`;
+    }
+    // For report-based findings with screenIndex, use screenMap directly
+    const reportFinding = report?.findings?.find((f) => f.issue === finding.issue);
+    if (reportFinding?.screenIndex != null) {
+      const entry = screenMap.get(reportFinding.screenIndex);
+      if (entry) return `/api/steps/${entry.stepId}/screenshot`;
+    }
+    return null;
+  }
+
+  function findingScreenLabel(finding: (typeof displayFindings)[number]): string | null {
+    if (finding.screenUrl) return finding.screenUrl;
+    const reportFinding = report?.findings?.find((f) => f.issue === finding.issue);
+    if (reportFinding?.screenIndex != null) {
+      const entry = screenMap.get(reportFinding.screenIndex);
+      if (entry?.screenLabel) return entry.screenLabel;
+    }
+    return null;
+  }
   const visibleFindings = showAllFindings ? displayFindings : displayFindings.slice(0, 6);
   const hiddenFindingsCount = displayFindings.length - 6;
 
@@ -405,6 +445,72 @@ export default function RunDetail() {
                 </div>
               )}
 
+              {/* ── Journey flow filmstrip ── */}
+              {report.perScreen && report.perScreen.length > 0 && screenMap.size > 0 && (
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                      Journey Flow
+                    </h3>
+                    <span className="text-[10px] text-muted-foreground/50">{report.perScreen.length} screens</span>
+                  </div>
+                  <div className="overflow-x-auto pb-2 -mx-1 px-1">
+                    <div className="flex items-stretch gap-0 min-w-min">
+                      {report.perScreen.map((screen, i) => {
+                        const entry = screenMap.get(screen.screenIndex);
+                        const screenshotSrc = entry ? `/api/steps/${entry.stepId}/screenshot` : null;
+                        const label = screen.screenLabel || entry?.screenLabel || `Screen ${screen.screenIndex + 1}`;
+                        const shortLabel = label.length > 24 ? label.slice(0, 21) + "..." : label;
+
+                        return (
+                          <div key={screen.screenIndex} className="flex items-center">
+                            <div className="flex flex-col items-center w-[140px] shrink-0">
+                              {screenshotSrc ? (
+                                <button
+                                  onClick={() => setLightboxSrc(screenshotSrc)}
+                                  className="w-[130px] h-[82px] rounded border border-border/40 bg-muted overflow-hidden hover:border-primary/50 transition-all cursor-zoom-in"
+                                >
+                                  <img
+                                    src={screenshotSrc}
+                                    alt={label}
+                                    className="w-full h-full object-cover object-top"
+                                    loading="lazy"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                  />
+                                </button>
+                              ) : (
+                                <div className="w-[130px] h-[82px] rounded border border-dashed border-border/40 bg-muted/30 flex items-center justify-center">
+                                  <Globe className="w-5 h-5 text-muted-foreground/30" />
+                                </div>
+                              )}
+                              <div className="mt-1.5 text-center w-full px-1">
+                                <span className="text-[10px] text-muted-foreground/70 font-mono block truncate" title={label}>
+                                  {shortLabel}
+                                </span>
+                                <div className="flex items-center justify-center gap-2 mt-1">
+                                  <span className={`text-[11px] font-semibold tabular-nums ${frictionColor(screen.avgFriction)}`}>
+                                    {screen.avgFriction.toFixed(2)}
+                                  </span>
+                                  {screen.findingCount > 0 && (
+                                    <span className="text-[10px] text-amber-400/70">
+                                      {screen.findingCount} {screen.findingCount === 1 ? "issue" : "issues"}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            {i < report.perScreen!.length - 1 && (
+                              <ChevronRight className="w-4 h-4 text-muted-foreground/30 shrink-0 -mx-1" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </section>
+              )}
+
               {/* ── Two-column: Findings (primary) | Personas (supporting) ── */}
               <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6">
                 {/* ── LEFT: Findings (primary content) ── */}
@@ -449,6 +555,8 @@ export default function RunDetail() {
                           const hasDbId = !finding.id.startsWith("report-");
                           const isExpanded = expandedFindings.has(finding.id);
                           const hasFix = !!finding.recommendedFix;
+                          const screenshotUrl = findingScreenshot(finding);
+                          const screenLabel = findingScreenLabel(finding);
 
                           return (
                             <div
@@ -460,9 +568,24 @@ export default function RunDetail() {
                                 className="w-full text-left p-4 hover:bg-muted/20 transition-colors"
                               >
                                 <div className="flex items-start gap-3">
-                                  <span className="text-xs font-semibold text-muted-foreground/50 tabular-nums mt-0.5 w-4 shrink-0 text-right">
-                                    {idx + 1}
-                                  </span>
+                                  {screenshotUrl ? (
+                                    <div
+                                      className="w-16 h-11 shrink-0 rounded overflow-hidden border border-border/30 bg-muted hover:border-primary/50 hover:opacity-90 transition-all cursor-zoom-in mt-0.5"
+                                      onClick={(e) => { e.stopPropagation(); setLightboxSrc(screenshotUrl); }}
+                                    >
+                                      <img
+                                        src={screenshotUrl}
+                                        alt={screenLabel || "Screen"}
+                                        className="w-full h-full object-cover object-top"
+                                        loading="lazy"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs font-semibold text-muted-foreground/50 tabular-nums mt-0.5 w-4 shrink-0 text-right">
+                                      {idx + 1}
+                                    </span>
+                                  )}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-start justify-between gap-3">
                                       <span className="text-[15px] font-medium text-foreground leading-snug">
@@ -478,8 +601,14 @@ export default function RunDetail() {
                                         <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground/50 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                                       </div>
                                     </div>
+                                    {screenLabel && (
+                                      <div className="flex items-center gap-1.5 mt-1.5">
+                                        <Globe className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                                        <span className="text-[11px] text-muted-foreground/70 font-mono truncate">{screenLabel}</span>
+                                      </div>
+                                    )}
                                     {finding.affectedPersonas.length > 0 && (
-                                      <div className="flex items-center gap-1 mt-2 flex-wrap">
+                                      <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                                         <Users className="w-3 h-3 text-muted-foreground/40 shrink-0" />
                                         {(finding.affectedPersonas as string[]).map((name) => (
                                           <span
