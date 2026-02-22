@@ -102,6 +102,7 @@ interface StepData {
   memoryUpdate?: string;
   url?: string;
   elementCount?: number;
+  error?: string;
 }
 
 function frictionColor(value: number): string {
@@ -465,8 +466,14 @@ export default function RunDetail() {
                                         d {step.dropoffRisk.toFixed(2)}
                                       </span>
                                     </div>
+                                    {/* Error (step failed) */}
+                                    {step.error && (
+                                      <div className="mb-1 px-2 py-1 rounded bg-red-400/10 border border-red-400/30">
+                                        <span className="text-[11px] font-mono text-red-400 break-all">{step.error}</span>
+                                      </div>
+                                    )}
                                     {/* Action taken */}
-                                    {step.browserAction && (
+                                    {step.browserAction && !step.error && (
                                       <div className="flex items-center gap-1.5 mb-1">
                                         <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border ${actionChipClass(step.browserAction.type, step.browserAction.success)}`}>
                                           {formatBrowserAction(step.browserAction)}
