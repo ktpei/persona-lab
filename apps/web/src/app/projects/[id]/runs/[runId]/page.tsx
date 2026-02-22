@@ -3,19 +3,37 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PersonaChat } from "@/components/persona-chat";
 import { VoiceCall } from "@/components/voice-call";
+import { FocusGroupTab } from "@/components/focus-group-tab";
+import {
+  frictionColor,
+  frictionBg,
+  frictionChipClass,
+  severityLabel,
+  severityBorderClass,
+} from "@/lib/friction-utils";
+import { Button } from "@/components/ui/button";
 import {
   AlertTriangle,
   MessageCircle,
   ChevronRight,
   Globe,
   Users,
-  BarChart3,
   ChevronDown,
-  FileText,
   Phone,
+  Sparkles,
+  RefreshCw,
+  Loader2,
+  Activity,
+  CheckCircle2,
+  X,
+  Brain,
+  Square,
 } from "lucide-react";
+
+/* ---------- Types ---------- */
 
 interface Episode {
   id: string;
@@ -33,16 +51,17 @@ interface Run {
   _count: { findings: number };
 }
 
-interface Finding {
+interface DbFinding {
+  id: string;
   issue: string;
   evidence: string;
   severity: number;
   frequency: number;
   affectedPersonas: string[];
-  elementRef?: string;
-  stepIndex?: number;
-  screenIndex?: number;
-  recommendedFix?: string;
+  elementRef?: string | null;
+  stepIndex?: number | null;
+  screenUrl?: string | null;
+  recommendedFix?: string | null;
 }
 
 interface Report {
@@ -53,7 +72,17 @@ interface Report {
     avgFriction: number;
     avgDropoffRisk: number;
   };
-  findings: Finding[];
+  findings: Array<{
+    issue: string;
+    evidence: string;
+    severity: number;
+    frequency: number;
+    affectedPersonas: string[];
+    elementRef?: string;
+    stepIndex?: number;
+    screenIndex?: number;
+    recommendedFix?: string;
+  }>;
   perScreen?: Array<{
     screenIndex: number;
     screenLabel?: string;
@@ -87,35 +116,22 @@ interface StepData {
   confusions: Array<{ issue: string; evidence: string }>;
 }
 
-function frictionColor(value: number): string {
-  if (value >= 0.6) return "text-red-400";
-  if (value >= 0.3) return "text-amber-400";
-  return "text-emerald-400";
+interface ThoughtData {
+  stepIndex: number;
+  salient: string | null;
+  action: string | null;
+  friction: number;
+  pageTitle: string | null;
 }
 
-function frictionBg(value: number): string {
-  if (value >= 0.6) return "bg-red-400";
-  if (value >= 0.3) return "bg-amber-400";
-  return "bg-emerald-400";
-}
-
-function frictionChipClass(value: number): string {
-  if (value >= 0.6) return "bg-red-400/15 text-red-400 border-red-400/30";
-  if (value >= 0.3) return "bg-amber-400/15 text-amber-400 border-amber-400/30";
-  return "bg-emerald-400/15 text-emerald-400 border-emerald-400/30";
-}
-
-function severityLabel(value: number): string {
-  if (value >= 0.6) return "High";
-  if (value >= 0.3) return "Medium";
-  return "Low";
-}
+/* ---------- Main Component ---------- */
 
 export default function RunDetail() {
   const params = useParams<{ id: string; runId: string }>();
   const { runId } = params;
   const [run, setRun] = useState<Run | null>(null);
   const [report, setReport] = useState<Report | null>(null);
+  const [dbFindings, setDbFindings] = useState<DbFinding[]>([]);
   const [chatEpisode, setChatEpisode] = useState<{ id: string; personaName: string } | null>(null);
   const [expandedPersonas, setExpandedPersonas] = useState<Set<string>>(new Set());
   const [episodeSteps, setEpisodeSteps] = useState<Map<string, StepData[]>>(new Map());
@@ -123,6 +139,11 @@ export default function RunDetail() {
   const [overview, setOverview] = useState<string | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [voiceCallEpisode, setVoiceCallEpisode] = useState<{ id: string; personaName: string } | null>(null);
+  const [generatingFixIds, setGeneratingFixIds] = useState<Set<string>>(new Set());
+  const [showAllFindings, setShowAllFindings] = useState(false);
+  const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const loadRun = useCallback(() => {
     fetch(`/api/runs/${runId}`)
@@ -135,7 +156,7 @@ export default function RunDetail() {
   }, [loadRun]);
 
   useEffect(() => {
-    if (!run || run.status === "COMPLETED" || run.status === "FAILED") return;
+    if (!run || run.status === "COMPLETED" || run.status === "FAILED" || run.status === "CANCELLED") return;
     const interval = setInterval(loadRun, 3000);
     return () => clearInterval(interval);
   }, [run?.status, loadRun]);
@@ -144,7 +165,10 @@ export default function RunDetail() {
     if (run?.status !== "COMPLETED") return;
     fetch(`/api/runs/${runId}/report`)
       .then((r) => r.json())
-      .then((data) => setReport(data.report));
+      .then((data) => {
+        setReport(data.report);
+        if (data.findings) setDbFindings(data.findings);
+      });
     setOverviewLoading(true);
     fetch(`/api/runs/${runId}/overview`)
       .then((r) => r.json())
@@ -162,7 +186,6 @@ export default function RunDetail() {
       return next;
     });
 
-    // Lazily load steps on first expand
     if (!isCurrentlyExpanded && !episodeSteps.has(episodeId) && !loadingSteps.has(episodeId)) {
       setLoadingSteps((prev) => new Set(prev).add(episodeId));
       try {
@@ -170,7 +193,7 @@ export default function RunDetail() {
         const data = await res.json();
         setEpisodeSteps((prev) => new Map(prev).set(episodeId, data.steps));
       } catch {
-        // silently ignore — steps just won't show
+        // silently ignore
       } finally {
         setLoadingSteps((prev) => {
           const next = new Set(prev);
@@ -181,16 +204,79 @@ export default function RunDetail() {
     }
   }
 
+  async function generateFix(findingId: string, regenerate = false) {
+    setGeneratingFixIds((prev) => new Set(prev).add(findingId));
+    try {
+      const res = await fetch(`/api/findings/${findingId}/fix`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regenerate }),
+      });
+      const data = await res.json();
+      if (data.fix) {
+        setDbFindings((prev) =>
+          prev.map((f) => (f.id === findingId ? { ...f, recommendedFix: data.fix } : f))
+        );
+        setExpandedFindings((prev) => new Set(prev).add(findingId));
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setGeneratingFixIds((prev) => {
+        const next = new Set(prev);
+        next.delete(findingId);
+        return next;
+      });
+    }
+  }
+
+  async function handleCancel() {
+    setCancelling(true);
+    try {
+      await fetch(`/api/runs/${runId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      loadRun();
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  function toggleFindingExpand(id: string) {
+    setExpandedFindings((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /* ---------- Loading skeleton ---------- */
+
   if (!run) {
     return (
       <div className="space-y-6 animate-pulse">
         <div className="h-8 bg-muted rounded w-48" />
-        <div className="grid grid-cols-5 gap-px">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-20 bg-muted rounded" />
+        <div className="grid grid-cols-4 gap-3 mt-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-16 bg-muted rounded" />
           ))}
         </div>
-        <div className="h-40 bg-muted rounded" />
+        <div className="h-20 bg-muted rounded" />
+        <div className="grid grid-cols-[3fr_2fr] gap-6">
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-24 bg-muted rounded" />
+            ))}
+          </div>
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-14 bg-muted rounded" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -200,33 +286,60 @@ export default function RunDetail() {
     ? Math.round((report.summary.completedEpisodes / report.summary.totalEpisodes) * 100)
     : 0;
 
+  const displayFindings = dbFindings.length > 0
+    ? dbFindings
+    : (report?.findings ?? []).map((f, i) => ({
+        ...f,
+        id: `report-${i}`,
+        elementRef: f.elementRef ?? null,
+        stepIndex: f.stepIndex ?? null,
+        screenUrl: null,
+        recommendedFix: f.recommendedFix ?? null,
+      }));
+  const visibleFindings = showAllFindings ? displayFindings : displayFindings.slice(0, 6);
+  const hiddenFindingsCount = displayFindings.length - 6;
+
+  const highCount = displayFindings.filter((f) => f.severity >= 0.6).length;
+  const medCount = displayFindings.filter((f) => f.severity >= 0.3 && f.severity < 0.6).length;
+  const lowCount = displayFindings.filter((f) => f.severity < 0.3).length;
+
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-foreground">Run {run.id.slice(0, 8)}</h2>
-          <StatusPill status={run.status} />
-          {isAgentMode && (
-            <Badge variant="secondary" className="text-[11px] font-normal gap-1">
-              <Globe className="w-3 h-3" />
-              Agent
-            </Badge>
-          )}
+    <div className="space-y-6">
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-2xl font-bold text-foreground tracking-tight font-mono">
+              {run.id.slice(0, 8)}
+            </h2>
+            <StatusPill status={run.status} />
+            {isAgentMode && (
+              <Badge variant="outline" className="text-[10px] gap-1">
+                <Globe className="w-2.5 h-2.5" />
+                Agent
+              </Badge>
+            )}
+          </div>
+          <span className="text-[12px] text-muted-foreground/50 font-mono">
+            {new Date(run.createdAt).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
         </div>
-        <span className="text-sm text-muted-foreground">
-          {new Date(run.createdAt).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
+        {!["COMPLETED", "FAILED", "CANCELLED"].includes(run.status) && (
+          <Button variant="outline" size="sm" onClick={handleCancel} disabled={cancelling}>
+            <Square className="w-3 h-3 mr-1.5" />
+            {cancelling ? "Cancelling..." : "Cancel Run"}
+          </Button>
+        )}
       </div>
 
-      {/* Live persona grid */}
-      {run.status !== "COMPLETED" && run.status !== "FAILED" && (
+      {/* ── Live persona grid ── */}
+      {run.status !== "COMPLETED" && run.status !== "FAILED" && run.status !== "CANCELLED" && (
         <LivePersonaGrid
           episodes={run.episodes}
           runStatus={run.status}
@@ -234,218 +347,424 @@ export default function RunDetail() {
         />
       )}
 
-      {/* Report */}
+      {/* ── Report + Focus Group ── */}
       {report && (
-        <>
-          {/* Summary stats */}
-          <section>
-            <SectionHeader icon={BarChart3} label="Summary" />
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <StatCard
-                label="Personas"
-                value={report.summary.totalEpisodes}
-                sub={`${report.summary.completedEpisodes} completed`}
-              />
-              <StatCard
-                label="Completion"
-                value={`${completionRate}%`}
-                sub={`${report.summary.abandonedEpisodes} dropped off`}
-                colorClass={completionRate >= 80 ? "text-emerald-400" : completionRate >= 50 ? "text-amber-400" : "text-red-400"}
-              />
-              <StatCard
-                label="Avg Friction"
-                value={report.summary.avgFriction.toFixed(2)}
-                sub={severityLabel(report.summary.avgFriction)}
-                colorClass={frictionColor(report.summary.avgFriction)}
-              />
-              <StatCard
-                label="Avg Drop-off"
-                value={report.summary.avgDropoffRisk.toFixed(2)}
-                sub={severityLabel(report.summary.avgDropoffRisk)}
-                colorClass={frictionColor(report.summary.avgDropoffRisk)}
-              />
-              <StatCard
-                label="Findings"
-                value={report.findings.length}
-                sub="friction issues identified"
-              />
-            </div>
-          </section>
+        <Tabs defaultValue="report">
+          <TabsList>
+            <TabsTrigger value="report">Report</TabsTrigger>
+            <TabsTrigger value="focus-group">Focus Group</TabsTrigger>
+          </TabsList>
 
-          {/* AI overview */}
-          {(overviewLoading || overview) && (
-            <section>
-              <SectionHeader icon={FileText} label="Overview" />
-              <div className="border border-border/50 rounded bg-card p-4">
-                {overviewLoading ? (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <div className="h-3 w-3 animate-spin rounded-full border border-primary border-r-transparent" />
-                    Generating summary...
-                  </div>
-                ) : (
-                  <p className="text-[15px] text-muted-foreground leading-relaxed">{overview}</p>
-                )}
+          <TabsContent value="report">
+            <div className="space-y-6">
+              {/* ── KPI stat boxes ── */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatBox
+                  icon={Users}
+                  value={report.summary.totalEpisodes}
+                  label="Personas"
+                  detail={`${report.summary.completedEpisodes} completed`}
+                />
+                <StatBox
+                  icon={CheckCircle2}
+                  value={`${completionRate}%`}
+                  label="Completion"
+                  detail={report.summary.abandonedEpisodes > 0 ? `${report.summary.abandonedEpisodes} dropped off` : "all finished"}
+                  valueClass={completionRate >= 80 ? "text-emerald-400" : completionRate >= 50 ? "text-amber-400" : "text-red-400"}
+                />
+                <StatBox
+                  icon={Activity}
+                  value={report.summary.avgFriction.toFixed(2)}
+                  label="Avg Friction"
+                  detail={severityLabel(report.summary.avgFriction)}
+                  valueClass={frictionColor(report.summary.avgFriction)}
+                />
+                <StatBox
+                  icon={AlertTriangle}
+                  value={displayFindings.length}
+                  label="Findings"
+                  detail={highCount > 0 ? `${highCount} high severity` : `${medCount} medium`}
+                  valueClass={highCount > 0 ? "text-red-400" : medCount > 0 ? "text-amber-400" : "text-emerald-400"}
+                />
               </div>
-            </section>
-          )}
 
-          {/* Per-Persona */}
-          <section>
-            <SectionHeader icon={Users} label="Personas" />
-            <div className="space-y-3">
-              {report.perPersona.map((pp) => {
-                const episode = run.episodes.find((ep) => ep.persona.id === pp.personaId);
-                const isExpanded = expandedPersonas.has(pp.personaId);
-                const steps = episode ? episodeSteps.get(episode.id) : undefined;
-                const isLoading = episode ? loadingSteps.has(episode.id) : false;
+              {/* ── AI overview callout ── */}
+              {(overviewLoading || overview) && (
+                <div className="border-l-4 border-primary bg-primary/5 rounded p-5">
+                  {overviewLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      Generating analysis...
+                    </div>
+                  ) : (
+                    <div className="flex gap-3">
+                      <Sparkles className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                      <p className="text-[15px] text-foreground leading-relaxed">{overview}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
-                return (
-                  <div
-                    key={pp.personaId}
-                    className="border border-border/50 rounded bg-card overflow-hidden"
-                  >
-                    {/* Persona header */}
-                    <div className="p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
-                          <span className="text-[15px] font-medium text-foreground shrink-0">{pp.personaName}</span>
-                          {pp.episodeStatus === "ABANDONED" && (
-                            <span className="text-[11px] text-amber-400 font-medium bg-amber-400/10 px-2 py-0.5 rounded shrink-0">
-                              dropped off
-                            </span>
-                          )}
-                          {pp.episodeStatus === "COMPLETED" && (
-                            <span className="text-[11px] text-emerald-400 font-medium bg-emerald-400/10 px-2 py-0.5 rounded shrink-0">
-                              completed
-                            </span>
-                          )}
-                          {/* Friction bar */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-xs text-muted-foreground">Friction</span>
-                            <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${frictionBg(pp.avgFriction)} rounded-full`}
-                                style={{ width: `${Math.max(pp.avgFriction * 100, 3)}%` }}
-                              />
-                            </div>
-                            <span className={`text-xs font-semibold tabular-nums ${frictionColor(pp.avgFriction)}`}>
-                              {pp.avgFriction.toFixed(2)}
-                            </span>
-                          </div>
-                          {/* Confidence bar */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-xs text-muted-foreground">Conf.</span>
-                            <div className="w-12 h-1 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-primary/60 rounded-full"
-                                style={{ width: `${Math.max(pp.avgConfidence * 100, 3)}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-semibold tabular-nums text-foreground">
-                              {pp.avgConfidence.toFixed(2)}
-                            </span>
-                          </div>
-                          <span className="text-xs text-muted-foreground shrink-0">{pp.stepsCount} steps</span>
-                        </div>
-                        {/* Chat + Voice buttons */}
-                        {episode && run.status === "COMPLETED" && (
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                            >
-                              <MessageCircle className="w-3 h-3" />
-                              Chat
-                            </button>
-                            <button
-                              onClick={() => setVoiceCallEpisode({ id: episode.id, personaName: pp.personaName })}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
-                            >
-                              <Phone className="w-3 h-3" />
-                              Voice
-                            </button>
-                          </div>
+              {/* ── Two-column: Findings (primary) | Personas (supporting) ── */}
+              <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6">
+                {/* ── LEFT: Findings (primary content) ── */}
+                <section className="min-w-0">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-muted-foreground" />
+                      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                        Findings
+                      </h3>
+                    </div>
+                    {displayFindings.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        {highCount > 0 && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-400/10 text-red-400">
+                            {highCount} high
+                          </span>
+                        )}
+                        {medCount > 0 && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400">
+                            {medCount} med
+                          </span>
+                        )}
+                        {lowCount > 0 && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-400/10 text-emerald-400">
+                            {lowCount} low
+                          </span>
                         )}
                       </div>
-                    </div>
+                    )}
+                  </div>
 
-                    {/* Toggle button */}
-                    <button
-                      onClick={() => episode && togglePersonaExpand(pp.personaId, episode.id)}
-                      className="w-full flex items-center justify-between px-4 py-2 border-t border-border/40 text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
-                    >
-                      <span>{isExpanded ? "Hide" : "Show"} journey ({pp.stepsCount} steps)</span>
-                      <ChevronDown
-                        className={`w-3.5 h-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                      />
-                    </button>
+                  <div className="max-h-[calc(100vh-380px)] overflow-y-auto space-y-2 pr-1">
+                    {displayFindings.length === 0 ? (
+                      <div className="border border-dashed border-border/50 rounded p-8 text-center text-sm text-muted-foreground">
+                        No friction issues detected
+                      </div>
+                    ) : (
+                      <>
+                        {visibleFindings.map((finding, idx) => {
+                          const isGenerating = generatingFixIds.has(finding.id);
+                          const hasDbId = !finding.id.startsWith("report-");
+                          const isExpanded = expandedFindings.has(finding.id);
+                          const hasFix = !!finding.recommendedFix;
 
-                    {/* Expanded steps */}
-                    {isExpanded && (
-                      <div className="border-t border-border/40 bg-muted/10">
-                        {isLoading ? (
-                          <div className="flex items-center justify-center py-6">
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-r-transparent" />
-                            <span className="ml-2 text-xs text-muted-foreground">Loading steps...</span>
-                          </div>
-                        ) : steps && steps.length > 0 ? (
-                          <div className="divide-y divide-border/30">
-                            {steps.map((step) => (
-                              <div key={step.stepIndex} className="px-4 py-3">
+                          return (
+                            <div
+                              key={finding.id}
+                              className={`border border-border/50 border-l-[3px] ${severityBorderClass(finding.severity)} rounded bg-card overflow-hidden transition-colors`}
+                            >
+                              <button
+                                onClick={() => toggleFindingExpand(finding.id)}
+                                className="w-full text-left p-4 hover:bg-muted/20 transition-colors"
+                              >
                                 <div className="flex items-start gap-3">
-                                  {/* Step number */}
-                                  <span className="text-[11px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0 mt-0.5 tabular-nums">
-                                    {step.stepIndex + 1}
+                                  <span className="text-xs font-semibold text-muted-foreground/50 tabular-nums mt-0.5 w-4 shrink-0 text-right">
+                                    {idx + 1}
                                   </span>
-                                  {/* Screenshot */}
-                                  <div className="w-24 h-16 shrink-0 rounded overflow-hidden border border-border/40 bg-muted">
-                                    <img
-                                      src={`/api/steps/${step.stepId}/screenshot`}
-                                      alt={step.screenLabel}
-                                      className="w-full h-full object-cover object-top"
-                                      loading="lazy"
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).style.display = "none";
-                                      }}
-                                    />
-                                  </div>
-                                  {/* Content */}
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-xs text-foreground/70 truncate">{step.screenLabel}</span>
-                                      <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${frictionChipClass(step.friction)} shrink-0`}>
-                                        {step.friction.toFixed(2)}
+                                    <div className="flex items-start justify-between gap-3">
+                                      <span className="text-[15px] font-medium text-foreground leading-snug">
+                                        {finding.issue}
                                       </span>
+                                      <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${frictionChipClass(finding.severity)}`}>
+                                          {severityLabel(finding.severity)}
+                                        </span>
+                                        <span className="text-[11px] text-muted-foreground tabular-nums">
+                                          {finding.frequency}x
+                                        </span>
+                                        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground/50 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                      </div>
                                     </div>
-                                    {step.salient && (
-                                      <p className="text-xs text-muted-foreground line-clamp-2">{step.salient}</p>
-                                    )}
-                                    {step.confusions.length > 0 && (
-                                      <div className="mt-1.5 space-y-0.5">
-                                        {step.confusions.map((c, ci) => (
-                                          <div key={ci} className="flex items-start gap-1.5">
-                                            <ChevronRight className="w-3 h-3 text-amber-400/60 mt-0.5 shrink-0" />
-                                            <span className="text-[11px] text-amber-400/80">{c.issue}</span>
-                                          </div>
+                                    {finding.affectedPersonas.length > 0 && (
+                                      <div className="flex items-center gap-1 mt-2 flex-wrap">
+                                        <Users className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                                        {(finding.affectedPersonas as string[]).map((name) => (
+                                          <span
+                                            key={name}
+                                            className="text-[10px] px-1.5 py-0.5 rounded bg-muted/80 text-muted-foreground"
+                                          >
+                                            {name}
+                                          </span>
                                         ))}
                                       </div>
                                     )}
                                   </div>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="py-4 text-center text-xs text-muted-foreground">No step data available.</div>
+                              </button>
+
+                              {isExpanded && (
+                                <div className="border-t border-border/30 px-4 pb-4 pt-3 ml-7">
+                                  <div className="mb-3">
+                                    <span className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-widest">
+                                      Evidence
+                                    </span>
+                                    <p className="text-[13px] text-muted-foreground leading-relaxed mt-1">
+                                      {finding.evidence}
+                                    </p>
+                                  </div>
+                                  {finding.elementRef && (
+                                    <div className="mb-3">
+                                      <span className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-widest">
+                                        Element
+                                      </span>
+                                      <p className="text-xs text-foreground/60 font-mono mt-1">{finding.elementRef}</p>
+                                    </div>
+                                  )}
+                                  {hasFix ? (
+                                    <div className="bg-primary/5 border border-primary/10 rounded p-3">
+                                      <div className="flex items-center justify-between mb-1.5">
+                                        <div className="flex items-center gap-1.5">
+                                          <Sparkles className="w-3 h-3 text-primary" />
+                                          <span className="text-[10px] font-medium text-primary uppercase tracking-widest">
+                                            Recommended Fix
+                                          </span>
+                                        </div>
+                                        {hasDbId && (
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); generateFix(finding.id, true); }}
+                                            disabled={isGenerating}
+                                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                                          >
+                                            <RefreshCw className={`w-3 h-3 ${isGenerating ? "animate-spin" : ""}`} />
+                                            Regenerate
+                                          </button>
+                                        )}
+                                      </div>
+                                      <p className="text-[13px] text-foreground/80 leading-relaxed">
+                                        {finding.recommendedFix}
+                                      </p>
+                                    </div>
+                                  ) : hasDbId ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); generateFix(finding.id); }}
+                                      disabled={isGenerating}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                    >
+                                      {isGenerating ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                      )}
+                                      {isGenerating ? "Generating fix..." : "Generate Fix"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {hiddenFindingsCount > 0 && (
+                          <button
+                            onClick={() => setShowAllFindings((v) => !v)}
+                            className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border/30 rounded hover:bg-muted/20"
+                          >
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllFindings ? "rotate-180" : ""}`} />
+                            {showAllFindings ? "Show less" : `Show ${hiddenFindingsCount} more finding${hiddenFindingsCount !== 1 ? "s" : ""}`}
+                          </button>
                         )}
-                      </div>
+                      </>
                     )}
                   </div>
-                );
-              })}
+                </section>
+
+                {/* ── RIGHT: Personas (supporting context) ── */}
+                <section className="min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                      Personas
+                    </h3>
+                    <span className="text-[10px] text-muted-foreground/50 ml-auto tabular-nums">
+                      {report.perPersona.length} total
+                    </span>
+                  </div>
+
+                  <div className="max-h-[calc(100vh-380px)] overflow-y-auto space-y-2 pr-1">
+                    {report.perPersona.map((pp) => {
+                      const episode = run.episodes.find((ep) => ep.persona.id === pp.personaId);
+                      const isExpanded = expandedPersonas.has(pp.personaId);
+                      const steps = episode ? episodeSteps.get(episode.id) : undefined;
+                      const isLoading = episode ? loadingSteps.has(episode.id) : false;
+
+                      return (
+                        <div
+                          key={pp.personaId}
+                          className="border border-border/50 rounded bg-card overflow-hidden"
+                        >
+                          <div className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <span className="text-[13px] font-medium text-foreground truncate">
+                                  {pp.personaName}
+                                </span>
+                                {pp.episodeStatus === "ABANDONED" && (
+                                  <span className="text-[10px] text-amber-400 font-medium bg-amber-400/10 px-1.5 py-0.5 rounded shrink-0">
+                                    dropped
+                                  </span>
+                                )}
+                                {pp.episodeStatus === "COMPLETED" && (
+                                  <span className="text-[10px] text-emerald-400 font-medium bg-emerald-400/10 px-1.5 py-0.5 rounded shrink-0">
+                                    done
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-12 h-1 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full ${frictionBg(pp.avgFriction)} rounded-full`}
+                                      style={{ width: `${Math.max(pp.avgFriction * 100, 3)}%` }}
+                                    />
+                                  </div>
+                                  <span className={`text-[11px] font-semibold tabular-nums ${frictionColor(pp.avgFriction)}`}>
+                                    {pp.avgFriction.toFixed(2)}
+                                  </span>
+                                </div>
+                                {episode && run.status === "COMPLETED" && (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
+                                      className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                      title="Chat"
+                                    >
+                                      <MessageCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => setVoiceCallEpisode({ id: episode.id, personaName: pp.personaName })}
+                                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                                      title="Voice"
+                                    >
+                                      <Phone className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className="text-[10px] text-muted-foreground/60">
+                                Conf. {pp.avgConfidence.toFixed(2)}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground/60">
+                                {pp.stepsCount} steps
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => episode && togglePersonaExpand(pp.personaId, episode.id)}
+                            className="w-full flex items-center justify-between px-3 py-1.5 border-t border-border/30 text-[11px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/20 transition-colors"
+                          >
+                            <span>{isExpanded ? "Hide" : "Show"} journey</span>
+                            <ChevronDown
+                              className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                            />
+                          </button>
+
+                          {/* Expanded steps with clickable screenshots */}
+                          {isExpanded && (
+                            <div className="border-t border-border/30 bg-muted/10">
+                              {isLoading ? (
+                                <div className="flex items-center justify-center py-5">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                  <span className="ml-2 text-[11px] text-muted-foreground">Loading...</span>
+                                </div>
+                              ) : steps && steps.length > 0 ? (
+                                <div className="divide-y divide-border/20">
+                                  {steps.map((step) => (
+                                    <div key={step.stepIndex} className="px-3 py-2.5">
+                                      <div className="flex items-start gap-2.5">
+                                        <span className="text-[10px] font-medium text-muted-foreground/50 bg-muted px-1 py-0.5 rounded shrink-0 mt-0.5 tabular-nums">
+                                          {step.stepIndex + 1}
+                                        </span>
+                                        {/* Clickable screenshot thumbnail */}
+                                        <button
+                                          onClick={() => setLightboxSrc(`/api/steps/${step.stepId}/screenshot`)}
+                                          className="w-20 h-14 shrink-0 rounded overflow-hidden border border-border/30 bg-muted hover:border-primary/50 hover:opacity-90 transition-all cursor-zoom-in"
+                                        >
+                                          <img
+                                            src={`/api/steps/${step.stepId}/screenshot`}
+                                            alt={step.screenLabel}
+                                            className="w-full h-full object-cover object-top"
+                                            loading="lazy"
+                                            onError={(e) => {
+                                              (e.target as HTMLImageElement).style.display = "none";
+                                            }}
+                                          />
+                                        </button>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 mb-0.5">
+                                            <span className="text-[11px] text-foreground/70 truncate">{step.screenLabel}</span>
+                                            <span className={`text-[10px] font-semibold px-1 py-0.5 rounded border ${frictionChipClass(step.friction)} shrink-0`}>
+                                              {step.friction.toFixed(2)}
+                                            </span>
+                                          </div>
+                                          {step.salient && (
+                                            <p className="text-[11px] text-muted-foreground line-clamp-2">{step.salient}</p>
+                                          )}
+                                          {step.confusions.length > 0 && (
+                                            <div className="mt-1 space-y-0.5">
+                                              {step.confusions.map((c, ci) => (
+                                                <div key={ci} className="flex items-start gap-1">
+                                                  <ChevronRight className="w-2.5 h-2.5 text-amber-400/60 mt-0.5 shrink-0" />
+                                                  <span className="text-[10px] text-amber-400/80">{c.issue}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="py-4 text-center text-[11px] text-muted-foreground">No step data.</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
             </div>
-          </section>
-        </>
+          </TabsContent>
+
+          <TabsContent value="focus-group">
+            <FocusGroupTab
+              runId={run.id}
+              participants={run.episodes.map((ep) => ({
+                personaId: ep.persona.id,
+                name: ep.persona.name,
+              }))}
+            />
+          </TabsContent>
+        </Tabs>
+      )}
+
+      {/* ── Screenshot lightbox ── */}
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            onClick={() => setLightboxSrc(null)}
+            className="absolute top-4 right-4 p-2 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={lightboxSrc}
+            alt="Screenshot"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded border border-border/20"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
 
       {chatEpisode && (
@@ -470,14 +789,14 @@ export default function RunDetail() {
 /* ---------- Live Persona Grid ---------- */
 
 const MAX_VISIBLE = 9;
-const TERMINAL = new Set(["COMPLETED", "ABANDONED", "FAILED"]);
+const TERMINAL = new Set(["COMPLETED", "ABANDONED", "FAILED", "CANCELLED"]);
 
 function getGridCols(count: number): number {
   if (count === 1) return 1;
   if (count === 2) return 2;
   if (count === 3) return 3;
-  if (count === 4) return 2; // 2×2
-  return 3;                  // 5–9: 3-col
+  if (count === 4) return 2;
+  return 3;
 }
 
 function LivePersonaGrid({
@@ -491,8 +810,10 @@ function LivePersonaGrid({
 }) {
   const [showMore, setShowMore] = useState(false);
 
-  const visible = episodes.slice(0, MAX_VISIBLE);
-  const overflow = episodes.slice(MAX_VISIBLE);
+  // Sort by persona name so cells don't jump around between polls
+  const sorted = [...episodes].sort((a, b) => a.persona.name.localeCompare(b.persona.name));
+  const visible = sorted.slice(0, MAX_VISIBLE);
+  const overflow = sorted.slice(MAX_VISIBLE);
 
   const cols = getGridCols(visible.length);
   const gridClass = [
@@ -505,7 +826,6 @@ function LivePersonaGrid({
 
   return (
     <div className="space-y-3">
-      {/* Header row */}
       <div className="flex items-center gap-2">
         {isAggregating ? (
           <>
@@ -523,14 +843,12 @@ function LivePersonaGrid({
         </span>
       </div>
 
-      {/* Main grid */}
       <div className={gridClass}>
         {visible.map((ep) => (
           <LivePersonaCell key={ep.id} episode={ep} isAgentMode={isAgentMode} />
         ))}
       </div>
 
-      {/* Overflow bar */}
       {overflow.length > 0 && (
         <div className="space-y-2">
           <button
@@ -568,14 +886,36 @@ function LivePersonaCell({
   isAgentMode: boolean;
 }) {
   const isDone = TERMINAL.has(episode.status);
+  const isRunning = episode.status === "RUNNING";
   const [timestamp, setTimestamp] = useState(() => Date.now());
   const [hasImage, setHasImage] = useState(false);
+  const [thought, setThought] = useState<ThoughtData | null>(null);
 
+  // Poll screenshot
   useEffect(() => {
     if (isDone || !isAgentMode) return;
     const interval = setInterval(() => setTimestamp(Date.now()), 1500);
     return () => clearInterval(interval);
   }, [isDone, isAgentMode]);
+
+  // Poll latest thought
+  useEffect(() => {
+    if (!isRunning) return;
+
+    let cancelled = false;
+    const poll = () => {
+      fetch(`/api/episodes/${episode.id}/latest-thought`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (!cancelled && data.thought) setThought(data.thought);
+        })
+        .catch(() => {});
+    };
+
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [episode.id, isRunning]);
 
   const dotClass =
     episode.status === "RUNNING"
@@ -590,7 +930,22 @@ function LivePersonaCell({
     episode.status === "COMPLETED" ? "completed" :
     episode.status === "ABANDONED" ? "dropped off" :
     episode.status === "FAILED" ? "failed" :
+    episode.status === "CANCELLED" ? "cancelled" :
     episode.status === "RUNNING" ? "running" : "pending";
+
+  // Map action enum to human-readable label
+  const actionLabel = thought?.action
+    ? ({
+        CLICK_PRIMARY_CTA: "Clicking primary CTA",
+        CLICK_SECONDARY_CTA: "Clicking secondary CTA",
+        OPEN_NAV: "Opening navigation",
+        SCROLL: "Scrolling",
+        BACK: "Going back",
+        SEEK_INFO: "Looking for information",
+        HESITATE: "Hesitating...",
+        ABANDON: "Abandoning",
+      } as Record<string, string>)[thought.action] ?? thought.action.toLowerCase().replace(/_/g, " ")
+    : null;
 
   return (
     <div className="relative rounded overflow-hidden bg-[#0d0d0d] border border-border/30" style={{ aspectRatio: "16/10" }}>
@@ -605,7 +960,7 @@ function LivePersonaCell({
         />
       )}
 
-      {/* Placeholder while waiting for first screenshot */}
+      {/* Placeholder */}
       {!hasImage && (
         <div className="absolute inset-0 flex items-center justify-center">
           {episode.status === "RUNNING" ? (
@@ -619,6 +974,23 @@ function LivePersonaCell({
       {/* Dim overlay when done */}
       {isDone && hasImage && (
         <div className="absolute inset-0 bg-black/40" />
+      )}
+
+      {/* ── Thought bubble (top) ── */}
+      {isRunning && thought?.salient && (
+        <div className="absolute top-0 left-0 right-0 px-2.5 pt-2 pb-6 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
+          <div className="flex items-start gap-1.5">
+            <Brain className="w-3 h-3 text-primary/80 mt-0.5 shrink-0" />
+            <p className="text-[10px] text-white/80 leading-tight line-clamp-2">
+              {thought.salient}
+            </p>
+          </div>
+          {actionLabel && (
+            <span className="inline-block mt-1 ml-4.5 text-[9px] text-primary/70 font-medium uppercase tracking-wider">
+              {actionLabel}
+            </span>
+          )}
+        </div>
       )}
 
       {/* Bottom name bar */}
@@ -642,23 +1014,40 @@ function LivePersonaCell({
 
 /* ---------- Shared Components ---------- */
 
-function SectionHeader({ icon: Icon, label }: { icon: React.ComponentType<{ className?: string }>; label: string }) {
+function StatBox({
+  icon: Icon,
+  value,
+  label,
+  detail,
+  valueClass,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  value: string | number;
+  label: string;
+  detail: string;
+  valueClass?: string;
+}) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">{label}</h3>
+    <div className="border border-border/40 rounded bg-card p-3.5">
+      <div className="flex items-center gap-1.5 mb-2">
+        <Icon className="w-3 h-3 text-muted-foreground/40" />
+        <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-widest">{label}</span>
+      </div>
+      <div className={`text-xl font-bold tabular-nums font-mono ${valueClass ?? "text-foreground"}`}>{value}</div>
+      <div className="text-[11px] text-muted-foreground/60 mt-1">{detail}</div>
     </div>
   );
 }
 
 const statusStyles: Record<string, string> = {
   PENDING: "bg-muted text-muted-foreground",
-  RUNNING: "bg-primary/15 text-primary",
-  SIMULATING: "bg-primary/15 text-primary",
-  AGGREGATING: "bg-primary/15 text-primary",
-  COMPLETED: "bg-emerald-400/15 text-emerald-400",
-  ABANDONED: "bg-amber-400/15 text-amber-400",
-  FAILED: "bg-destructive/15 text-destructive",
+  RUNNING: "bg-primary/10 text-primary",
+  SIMULATING: "bg-primary/10 text-primary",
+  AGGREGATING: "bg-primary/10 text-primary",
+  COMPLETED: "bg-emerald-500/10 text-emerald-500",
+  ABANDONED: "bg-amber-400/10 text-amber-400",
+  FAILED: "bg-destructive/10 text-destructive",
+  CANCELLED: "bg-amber-400/10 text-amber-400",
 };
 
 const statusLabels: Record<string, string> = {
@@ -668,31 +1057,11 @@ const statusLabels: Record<string, string> = {
 function StatusPill({ status }: { status: string }) {
   return (
     <span
-      className={`inline-flex items-center rounded px-2.5 py-0.5 text-xs font-medium ${
+      className={`inline-flex items-center rounded px-1.5 py-px text-[10px] font-medium tracking-wider uppercase ${
         statusStyles[status] ?? "bg-muted text-muted-foreground"
       }`}
     >
       {statusLabels[status] ?? status}
     </span>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  sub,
-  colorClass,
-}: {
-  label: string;
-  value: string | number;
-  sub: string;
-  colorClass?: string;
-}) {
-  return (
-    <div className="bg-card border border-border/50 rounded p-4">
-      <div className="text-xs text-muted-foreground mb-1">{label}</div>
-      <div className={`text-2xl font-bold tabular-nums ${colorClass ?? "text-foreground"}`}>{value}</div>
-      <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>
-    </div>
   );
 }

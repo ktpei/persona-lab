@@ -15,7 +15,12 @@ import {
 import type { SimulateAgentEpisodeJob, AggregateReportJob } from "@persona-lab/shared";
 import type { Prisma } from "@prisma/client";
 
-const MAX_STUCK_COUNT = 5;
+const MAX_STUCK_COUNT = 3;
+
+async function isRunCancelled(runId: string): Promise<boolean> {
+  const run = await prisma.run.findUnique({ where: { id: runId }, select: { status: true } });
+  return run?.status === "CANCELLED";
+}
 
 /**
  * Repair common LLM mistakes in the raw JSON before Zod validation.
@@ -23,7 +28,11 @@ const MAX_STUCK_COUNT = 5;
  */
 function repairRawOutput(raw: Record<string, unknown>): Record<string, unknown> {
   const action = raw.browserAction as Record<string, unknown> | undefined;
-  if (!action) return raw;
+  if (!action) {
+    console.warn(`[repair] No browserAction in LLM output. Keys: ${Object.keys(raw).join(", ")}`);
+    return raw;
+  }
+  const originalType = action.type;
 
   // "type" action: default submit to true — most typing is into search/form fields
   // that have no separate submit button. LLM must explicitly set submit:false to suppress.
@@ -39,13 +48,14 @@ function repairRawOutput(raw: Record<string, unknown>): Record<string, unknown> 
     }
   }
 
-  // "click" action missing "elementIndex" but has coordinates → convert to click_coordinates
-  if (action.type === "click" && action.elementIndex == null && action.x != null && action.y != null) {
-    action.type = "click_coordinates";
-  }
-
   // "click" action with out-of-range or missing elementIndex → fallback to scroll down
   if (action.type === "click" && action.elementIndex == null) {
+    action.type = "scroll";
+    action.direction = "down";
+  }
+
+  // "scroll_to" missing elementIndex → demote to scroll down
+  if (action.type === "scroll_to" && action.elementIndex == null) {
     action.type = "scroll";
     action.direction = "down";
   }
@@ -70,9 +80,9 @@ function repairRawOutput(raw: Record<string, unknown>): Record<string, unknown> 
     // Guess intent from browser action type
     const intentMap: Record<string, string> = {
       click: "CLICK_PRIMARY_CTA",
-      click_coordinates: "CLICK_PRIMARY_CTA",
       type: "CLICK_PRIMARY_CTA",
       scroll: "SCROLL",
+      scroll_to: "SCROLL",
       navigate_back: "BACK",
       wait: "HESITATE",
       done: "ABANDON",
@@ -83,6 +93,15 @@ function repairRawOutput(raw: Record<string, unknown>): Record<string, unknown> 
   // Ensure confusions is an array
   if (!Array.isArray(raw.confusions)) {
     raw.confusions = [];
+  }
+
+  // Log if repairs were made
+  if (action.type !== originalType) {
+    console.log(`[repair] browserAction.type changed: ${String(originalType)} → ${String(action.type)}`);
+  }
+  if (!validIntents.includes(raw.intent as string)) {
+    // intent was already fixed above, but log
+    console.log(`[repair] intent was invalid, remapped to "${raw.intent}"`);
   }
 
   return raw;
@@ -104,6 +123,7 @@ function buildAgentReasoningPrompt(
   elementList: string,
   stuckCount: number,
   scrollInfo: ScrollInfo,
+  overlayDetected: boolean,
 ): string {
   const stuckHint = stuckCount >= 2
     ? `\n\nWARNING: You have been on the same URL for ${stuckCount} consecutive actions. Try a different approach, navigate elsewhere, or give up if you're stuck.\n`
@@ -118,10 +138,12 @@ function buildAgentReasoningPrompt(
   const scrollPct = Math.round((scrollBottom / scrollInfo.pageHeight) * 100);
   const canScrollDown = scrollBottom < scrollInfo.pageHeight - 10;
   const canScrollUp = scrollInfo.scrollY > 10;
+  const scrollDelta = Math.round(scrollInfo.viewportHeight * 0.65);
 
   let scrollContext = `\n## Page Scroll Position\n`;
   scrollContext += `Viewport: ${scrollInfo.viewportHeight}px tall. Page total: ${scrollInfo.pageHeight}px. `;
   scrollContext += `Currently viewing: ${scrollInfo.scrollY}px – ${scrollBottom}px (${scrollPct}% of page).`;
+  scrollContext += `\nEach "scroll" action moves ~${scrollDelta}px (~65% of viewport, 35% overlap with current view).`;
   if (canScrollDown) {
     const remaining = scrollInfo.pageHeight - scrollBottom;
     scrollContext += `\n**${remaining}px of content below the fold — you have NOT seen the bottom of this page.** If you cannot find what you need, scroll down before giving up.`;
@@ -135,36 +157,85 @@ function buildAgentReasoningPrompt(
   return `${personaContext}
 
 ## Goal
-You are trying to: "${goal}"
+Your task is: "${goal}"
 Step ${stepIndex + 1} of max ${maxSteps}. Current URL: ${currentUrl}
+
+CRITICAL: Your task is ONLY what is described above — nothing more. As soon as the goal is achieved, immediately choose "done" with success=true. Do NOT continue beyond the goal. For example:
+- "Add item to cart" → stop once the item is confirmed in the cart. Do NOT proceed to checkout, account creation, or payment.
+- "Find product X" → stop once you're on the product page. Do NOT add it to cart.
+- "Complete checkout" → stop once the order confirmation appears.
+Interpret the goal literally and narrowly.
 ${scrollContext}
 
-## Interactive Elements (visible in current viewport)
+## Interactive Elements
 ${elementList}
 
 ## Screenshot (current viewport only — page may extend beyond what you see)
 [attached PNG]
-${memorySection}${stuckHint}
+${overlayDetected ? `
+## OVERLAY / MODAL DETECTED
+A modal, dialog, or overlay is currently covering the page. Look at it carefully:
+- If it's a SUCCESS confirmation (e.g. "Added to Cart", "Item added", "Order confirmed") → this means the goal may be achieved! Choose "done" with success=true.
+- If it's a cookie consent / newsletter popup → dismiss it by clicking the accept/close button in the element list.
+- If it's an image lightbox or zoom overlay → click the X/close button or use navigate_back to dismiss it.
+- If it's a size/option selector → interact with it as needed for the goal.
+Do NOT ignore the overlay — it is the most important thing on screen right now.
+` : ""}${memorySection}${stuckHint}
 
 ## Instructions
 You ARE this persona. First person. Identify friction, then pick a concrete action.
 
-Analyze this page critically. Identify friction points, confusions, and obstacles from your persona's perspective. Even well-designed pages have minor issues — evaluate strictly based on your behavioral profile.
+Analyze this page critically. You MUST identify at least one friction point or confusion for EVERY screen — even well-designed pages have issues. Common UX friction includes:
+- Unclear labels, ambiguous CTAs, or confusing terminology
+- Too many options or visual clutter making the next step unclear
+- Missing information (price, size, availability) that forces extra clicks
+- Unexpected layouts, hidden navigation, or unfamiliar interaction patterns
+- Slow-feeling flows that require too many steps for a simple task
+- Pop-ups, overlays, or interruptions (cookie banners, newsletter modals, app install prompts)
+- Poor search results, irrelevant recommendations, or hard-to-find categories
+- Tiny text, low contrast, or elements that are hard to notice
 
-IMPORTANT: The screenshot and element list only show what is currently visible in the viewport. If the page is taller than the viewport, there is more content above or below that you haven't seen yet. Check the scroll position above — if you haven't seen the full page and can't find what you need, SCROLL DOWN before concluding something is missing.
+A friction score of 0.0 should be extremely rare — reserve it only for screens that are absolutely flawless for your persona. Most screens should score at least 0.2-0.4 friction. Screens with real obstacles should score 0.5+.
 
-MANDATORY: You are FORBIDDEN from choosing "done" with success=false if there is unseen content below the viewport. You MUST scroll down to view the entire page before giving up. If the scroll position shows you are not at the bottom, your next action MUST be "scroll" with direction "down".
+Remember: your scores should reflect YOUR persona's tolerances. If you are impatient, even small delays or extra clicks should push friction to 0.4+. If you have high frustration sensitivity, ambiguous elements should push friction to 0.5+. If you are unforgiving of bad UX, any confusion should score at least 0.3.
+
+IMPORTANT: The screenshot and element list only show what is currently visible in the viewport. If the page is taller than the viewport, there is more content above or below that you haven't seen yet. Check the scroll position above — if you haven't seen the full page and can't find what you need, consider scrolling down before concluding something is missing.
 
 Pick ONE concrete browser action to execute:
-- click: click an interactive element by index number. Requires: { "type": "click", "elementIndex": <number> }
-- click_coordinates: click a specific x,y position (only if no element matches). Requires: { "type": "click_coordinates", "x": <number>, "y": <number> }
-- type: type text into an input field. Requires: { "type": "type", "elementIndex": <number>, "text": "<string>", "submit": true|false }. Set "submit": true to press Enter after typing — useful for search bars and forms that have no visible submit button. If there IS a visible search/submit button you want to click, set "submit": false and click the button as a separate action.
-- scroll: scroll to see more content. Requires: { "type": "scroll", "direction": "up" | "down" }
+- click: click an interactive element by index number. Only works for elements in the viewport. Requires: { "type": "click", "elementIndex": <number> }
+- type: type text into an input field. Requires: { "type": "type", "elementIndex": <number>, "text": "<string>", "submit": true|false }. Default to "submit": true — always press Enter after typing to submit the form/search. Only set "submit": false if you specifically need to type without submitting (e.g. filling one field in a multi-field form before moving to the next).
+- scroll: explore unseen content above or below the current viewport. Each scroll moves ~65% of the viewport. Requires: { "type": "scroll", "direction": "up" | "down" }
+- scroll_to: scroll a specific element into the center of the viewport. Use when the element list shows a specific element below or above the viewport that you want to reach. More precise than repeated scroll actions. Requires: { "type": "scroll_to", "elementIndex": <number> }
 - navigate_back: go back to the previous page. Requires: { "type": "navigate_back" }
 - wait: wait for the page to load. Requires: { "type": "wait", "reason": "<string>" }
-- done: goal reached or giving up. Requires: { "type": "done", "success": true|false, "reason": "<string>" }
+- done: STOP — the goal has been achieved (success=true) or you are giving up (success=false). Choose this IMMEDIATELY when the goal is met. Do not take any additional actions after the goal is complete. Requires: { "type": "done", "success": true|false, "reason": "<string>" }
+
+CLICK STRATEGY:
+- On product listing/search results pages, click the product TITLE or NAME link to navigate to the product detail page. Do NOT click product images or thumbnails — these often open a zoom lightbox or image gallery overlay instead of navigating to the product page.
+- On product detail pages, look for "Add to Cart/Bag" buttons, size selectors, and quantity controls.
+- Prefer text links and labeled buttons over image elements when both lead to the same destination.
+
+SCROLL STRATEGY:
+- Use "scroll" (direction) to explore unknown content beyond the viewport.
+- Use "scroll_to" (elementIndex) when the element list shows a specific element below or above the viewport that you want to reach. This is precise — no overscrolling.
+- Do NOT click elements listed below or above the viewport — they are off-screen. Scroll to them first using scroll_to, then click on the next step.
+- Don't waste steps scrolling through an entire long page. If you've scrolled a few times and can't find what you need, try navigating back or using a different approach.
 
 Also provide an abstract "intent" for report compatibility: one of CLICK_PRIMARY_CTA, CLICK_SECONDARY_CTA, OPEN_NAV, SCROLL, BACK, SEEK_INFO, HESITATE, ABANDON.
+
+Friction scale:
+- 0.0-0.1: Nearly perfect — everything is obvious, no hesitation (extremely rare)
+- 0.2-0.3: Minor issues — small label confusion, slightly cluttered, but workable
+- 0.4-0.5: Noticeable friction — unclear next step, had to think, one real confusion
+- 0.6-0.7: Significant friction — multiple confusions, might consider giving up
+- 0.8-1.0: Severe — nearly impossible to proceed, seriously considering abandoning
+
+Dropoff risk scale:
+- 0.0-0.1: Would definitely continue
+- 0.2-0.3: Slightly annoyed but continuing
+- 0.4-0.5: Considering leaving
+- 0.6-0.7: Likely to leave
+- 0.8-1.0: Almost certainly abandoning
 
 Respond as JSON:
 {
@@ -177,8 +248,11 @@ Respond as JSON:
   "confidence": 0.0 to 1.0,
   "friction": 0.0 to 1.0,
   "dropoffRisk": 0.0 to 1.0,
-  "memoryUpdate": "optional note to carry forward"
-}`;
+  "memoryUpdate": "optional note to carry forward",
+  "completesGoal": false
+}
+
+IMPORTANT: Set "completesGoal": true when the action you are choosing will directly achieve the goal. For example, clicking "Add to Cart" when the goal is to add an item to cart. When completesGoal is true, the action will be executed and the episode ends immediately as successful — no further steps needed.`;
 }
 
 export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
@@ -191,6 +265,13 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
   });
   if (!episode) throw new Error(`Episode ${job.episodeId} not found`);
 
+  // Skip if episode was already cancelled (bulk update from cancel API)
+  if (episode.status === "CANCELLED") {
+    console.log(`${tag} Episode already cancelled, skipping`);
+    await checkAndAdvanceRun(job.runId);
+    return;
+  }
+
   // Mark episode as running
   await prisma.episode.update({
     where: { id: episode.id },
@@ -200,11 +281,24 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
   const llm = createLLMProvider(job.model);
   const personaContext = buildPersonaContext(episode.persona);
 
-  let episodeStatus: "COMPLETED" | "ABANDONED" | "FAILED" = "COMPLETED";
+  let episodeStatus: "COMPLETED" | "ABANDONED" | "FAILED" | "CANCELLED" = "COMPLETED";
   let memory: string | null = null;
   let prevUrl = "";
   let stuckCount = 0;
   let lastActionWasInteraction = false; // typing/clicking counts as progress even if URL didn't change
+  let forcedScrollCount = 0;
+  const MAX_FORCED_SCROLLS = 3; // don't force more than 3 scrolls before allowing abandon
+
+  // Check cancellation BEFORE creating container to avoid wasting resources
+  if (await isRunCancelled(job.runId)) {
+    console.log(`${tag} Run already cancelled before container start, skipping`);
+    await prisma.episode.update({
+      where: { id: episode.id },
+      data: { status: "CANCELLED" },
+    });
+    await checkAndAdvanceRun(job.runId);
+    return;
+  }
 
   const skipDocker = process.env.BROWSER_MODE === "local";
   const container = skipDocker ? null : new BrowserContainer();
@@ -251,6 +345,25 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         break;
       }
 
+      // Check for run cancellation
+      if (await isRunCancelled(job.runId)) {
+        console.log(`${tag} Step ${stepIdx}: run cancelled, stopping episode`);
+        episodeStatus = "CANCELLED";
+        break;
+      }
+
+      // Detect overlays/modals so we can inform the agent (but don't auto-dismiss —
+      // the agent needs to see confirmation modals like "Added to Cart" to know the goal succeeded)
+      let overlayDetected = false;
+      try {
+        overlayDetected = await session.detectOverlay();
+        if (overlayDetected) {
+          console.log(`${tag} Step ${stepIdx}: overlay/modal detected — agent will see it in screenshot`);
+        }
+      } catch {
+        // Non-critical — continue without overlay info
+      }
+
       // Capture screenshot
       const screenshotBuffer = await session.screenshot();
       const screenshotKey = `agent-runs/${job.runId}/${job.episodeId}/step-${stepIdx}.png`;
@@ -260,14 +373,17 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
       // Get scroll position so the agent knows how much page is left
       const scrollInfo = await session.getScrollInfo();
 
-      // Extract interactive elements
+      // Get viewport size for element extraction
+      const vp = session.page!.viewportSize() ?? { width: 1280, height: 800 };
+
+      // Extract interactive elements with viewport awareness
       let elements: InteractiveElement[] = [];
       try {
-        elements = await extractInteractiveElements(session.page!);
+        elements = await extractInteractiveElements(session.page!, vp.height);
       } catch (err) {
         console.warn(`${tag} Step ${stepIdx}: element extraction failed:`, err);
       }
-      const elementList = formatElementList(elements);
+      const elementList = formatElementList(elements, vp.height);
 
       // Build prompt and call LLM
       const prompt = buildAgentReasoningPrompt(
@@ -280,6 +396,7 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         elementList,
         stuckCount,
         scrollInfo,
+        overlayDetected,
       );
 
       let reasoning: AgentReasoningOutput;
@@ -293,7 +410,23 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         const repaired = repairRawOutput(raw as Record<string, unknown>);
         reasoning = AgentReasoningOutput.parse(repaired);
 
-        console.log(`${tag} Step ${stepIdx}: action=${reasoning.browserAction.type} intent=${reasoning.intent} friction=${reasoning.friction}`);
+        // Detailed reasoning log
+        const act = reasoning.browserAction;
+        const actDetail = act.type === "click" ? `click[${act.elementIndex}]`
+          : act.type === "type" ? `type[${act.elementIndex}] "${act.text?.slice(0, 30)}"`
+          : act.type === "scroll" ? `scroll_${act.direction}`
+          : act.type === "scroll_to" ? `scroll_to[${act.elementIndex}]`
+          : act.type === "done" ? `done(success=${act.success})`
+          : act.type;
+        console.log(`${tag} Step ${stepIdx}: action=${actDetail} intent=${reasoning.intent} friction=${reasoning.friction.toFixed(2)} confidence=${reasoning.confidence.toFixed(2)} dropoff=${reasoning.dropoffRisk.toFixed(2)}`);
+        console.log(`${tag} Step ${stepIdx}: salient="${reasoning.salient?.slice(0, 100)}"`);
+        if (reasoning.confusions?.length) {
+          console.log(`${tag} Step ${stepIdx}: ${reasoning.confusions.length} confusion(s): ${reasoning.confusions.map(c => c.issue.slice(0, 60)).join(" | ")}`);
+        }
+        if (reasoning.memoryUpdate) {
+          console.log(`${tag} Step ${stepIdx}: memory="${reasoning.memoryUpdate.slice(0, 100)}"`);
+        }
+        console.log(`${tag} Step ${stepIdx}: url=${currentUrl} title="${pageTitle?.slice(0, 50)}" scroll=${scrollInfo.scrollY}/${scrollInfo.pageHeight} (${Math.round(((scrollInfo.scrollY + scrollInfo.viewportHeight) / scrollInfo.pageHeight) * 100)}%)`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`${tag} Step ${stepIdx} LLM FAILED: ${msg}`);
@@ -329,13 +462,16 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
           : reasoning.memoryUpdate;
       }
 
-      // Guard: prevent premature abandonment if page hasn't been fully viewed
+      // Guard: prevent premature abandonment if page hasn't been sufficiently viewed.
+      // Capped at MAX_FORCED_SCROLLS to avoid burning all steps scrolling long pages.
       if (reasoning.browserAction.type === "done" && !reasoning.browserAction.success) {
         const bottomEdge = scrollInfo.scrollY + scrollInfo.viewportHeight;
-        const hasSeenBottom = bottomEdge >= scrollInfo.pageHeight - 50;
-        if (!hasSeenBottom) {
+        const pctSeen = Math.min(1, bottomEdge / scrollInfo.pageHeight);
+        const hasSeenEnough = pctSeen >= 0.5 || forcedScrollCount >= MAX_FORCED_SCROLLS;
+        if (!hasSeenEnough) {
           const unseen = scrollInfo.pageHeight - bottomEdge;
-          console.log(`${tag} Step ${stepIdx}: agent wants to abandon but ${unseen}px unseen below — forcing scroll`);
+          forcedScrollCount++;
+          console.log(`${tag} Step ${stepIdx}: agent wants to abandon but only ${Math.round(pctSeen * 100)}% seen (${unseen}px unseen) — forcing scroll (${forcedScrollCount}/${MAX_FORCED_SCROLLS})`);
           await session.executeAction({ type: "scroll", direction: "down" as const }, elements);
           continue;
         }
@@ -348,17 +484,34 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         break;
       }
 
+      // Safety: scroll_to with out-of-range element → fall back to scroll down
+      if (reasoning.browserAction.type === "scroll_to") {
+        const targetEl = elements[reasoning.browserAction.elementIndex];
+        if (!targetEl) {
+          console.log(`${tag} Step ${stepIdx}: scroll_to element ${reasoning.browserAction.elementIndex} out of range, falling back to scroll down`);
+          await session.executeAction({ type: "scroll", direction: "down" as const }, elements);
+          continue;
+        }
+      }
+
       // Execute the browser action
       try {
         await session.executeAction(reasoning.browserAction, elements);
         const actionType = reasoning.browserAction.type;
-        if (actionType === "type" || actionType === "click" || actionType === "click_coordinates") {
+        if (actionType === "type" || actionType === "click") {
           lastActionWasInteraction = true;
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`${tag} Step ${stepIdx}: action execution failed: ${msg}`);
         // Continue — the page might still be usable
+      }
+
+      // Early exit: if the LLM says this action completes the goal, we're done
+      if (reasoning.completesGoal) {
+        console.log(`${tag} Step ${stepIdx}: completesGoal=true — ending episode as COMPLETED`);
+        episodeStatus = "COMPLETED";
+        break;
       }
     }
   } catch (err) {
@@ -384,6 +537,15 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
 }
 
 async function checkAndAdvanceRun(runId: string) {
+  const rtag = `[run:${runId.slice(0, 8)}]`;
+
+  // Don't advance if run was cancelled
+  const run = await prisma.run.findUnique({ where: { id: runId }, select: { status: true } });
+  if (run?.status === "CANCELLED") {
+    console.log(`${rtag} Run is cancelled, skipping aggregation check`);
+    return;
+  }
+
   const pendingOrRunning = await prisma.episode.count({
     where: {
       runId,
@@ -391,9 +553,13 @@ async function checkAndAdvanceRun(runId: string) {
     },
   });
 
-  if (pendingOrRunning > 0) return;
+  if (pendingOrRunning > 0) {
+    console.log(`${rtag} ${pendingOrRunning} episode(s) still pending/running`);
+    return;
+  }
 
   // All episodes done — advance to aggregation
+  console.log(`${rtag} All episodes complete — advancing to AGGREGATING`);
   await prisma.run.update({
     where: { id: runId },
     data: { status: "AGGREGATING" },
@@ -403,4 +569,5 @@ async function checkAndAdvanceRun(runId: string) {
   const agJob: AggregateReportJob = { runId };
   await aggregateQueue.add(QUEUE_NAMES.AGGREGATE_REPORT, agJob);
   await aggregateQueue.close();
+  console.log(`${rtag} Aggregation job enqueued`);
 }

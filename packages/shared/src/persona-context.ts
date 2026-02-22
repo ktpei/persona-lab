@@ -85,6 +85,31 @@ export function buildPersonaContext(persona: PersonaData): string {
       lines.push(`Your accessibility needs: ${traits.accessibilityNeeds.join(", ")}`);
     }
 
+    // Add friction scoring guidance tied to specific traits
+    const scoringHints: string[] = [];
+    if (typeof traits.patience === "number" && traits.patience < 0.35) {
+      scoringHints.push("Your low patience means ANY extra step, loading time, or unclear path = friction 0.4+");
+    }
+    if (typeof traits.patience === "number" && traits.patience > 0.65) {
+      scoringHints.push("Your high patience means you tolerate friction better, but still notice and report issues (score 0.2+ for real confusions)");
+    }
+    if (typeof traits.frustrationSensitivity === "number" && traits.frustrationSensitivity > 0.65) {
+      scoringHints.push("Your high frustration sensitivity means confusing labels, too many choices, or dead ends = friction 0.5+");
+    }
+    if (typeof traits.exploration === "number" && traits.exploration < 0.35) {
+      scoringHints.push("Your low exploration tendency means unfamiliar layouts, hidden menus, or non-obvious navigation = friction 0.4+");
+    }
+    if (typeof traits.forgiveness === "number" && traits.forgiveness < 0.35) {
+      scoringHints.push("Your low forgiveness means any UX mistake or confusing flow = high friction, you blame the site not yourself");
+    }
+    if (scoringHints.length > 0) {
+      lines.push("");
+      lines.push("How your traits affect friction scoring:");
+      for (const hint of scoringHints) {
+        lines.push(`- ${hint}`);
+      }
+    }
+
     return lines.join("\n");
   }
 

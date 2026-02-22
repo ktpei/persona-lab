@@ -9,6 +9,7 @@ dotenv.config({
 });
 
 import { Worker } from "bullmq";
+import Docker from "dockerode";
 import { QUEUE_NAMES } from "@persona-lab/shared";
 import type { SimulateEpisodeJob, SimulateAgentEpisodeJob, AggregateReportJob } from "@persona-lab/shared";
 import { handleSimulateEpisode } from "./workers/simulate-episode.js";
@@ -29,6 +30,13 @@ const connection = getRedisOpts();
 
 console.log(`Concurrency: episode=${EPISODE_CONCURRENCY}, agent=${AGENT_CONCURRENCY}`);
 
+// BullMQ lock duration must exceed the longest single step.
+// Agent episodes do LLM vision calls that can take 30-60s each,
+// plus browser actions, screenshots, and DB writes.
+// 5 minutes gives ample headroom so jobs aren't falsely stalled.
+const LOCK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+const LOCK_RENEW_TIME_MS = LOCK_DURATION_MS / 2; // renew halfway through
+
 const simulateEpisodeWorker = new Worker<SimulateEpisodeJob>(
   QUEUE_NAMES.SIMULATE_EPISODE,
   async (job) => {
@@ -36,7 +44,13 @@ const simulateEpisodeWorker = new Worker<SimulateEpisodeJob>(
     await handleSimulateEpisode(job.data);
     console.log(`[simulate_episode] Done episode ${job.data.episodeId}`);
   },
-  { connection, concurrency: EPISODE_CONCURRENCY }
+  {
+    connection,
+    concurrency: EPISODE_CONCURRENCY,
+    lockDuration: LOCK_DURATION_MS,
+    lockRenewTime: LOCK_RENEW_TIME_MS,
+    stalledInterval: 60_000, // check for stalled jobs every 60s (not default 30s)
+  }
 );
 
 const simulateAgentEpisodeWorker = new Worker<SimulateAgentEpisodeJob>(
@@ -46,7 +60,13 @@ const simulateAgentEpisodeWorker = new Worker<SimulateAgentEpisodeJob>(
     await handleSimulateAgentEpisode(job.data);
     console.log(`[simulate_agent_episode] Done episode ${job.data.episodeId}`);
   },
-  { connection, concurrency: AGENT_CONCURRENCY }
+  {
+    connection,
+    concurrency: AGENT_CONCURRENCY,
+    lockDuration: LOCK_DURATION_MS,
+    lockRenewTime: LOCK_RENEW_TIME_MS,
+    stalledInterval: 60_000,
+  }
 );
 
 const aggregateReportWorker = new Worker<AggregateReportJob>(
@@ -56,7 +76,12 @@ const aggregateReportWorker = new Worker<AggregateReportJob>(
     await handleAggregateReport(job.data);
     console.log(`[aggregate_report] Done run ${job.data.runId}`);
   },
-  { connection, concurrency: 1 }
+  {
+    connection,
+    concurrency: 1,
+    lockDuration: LOCK_DURATION_MS,
+    lockRenewTime: LOCK_RENEW_TIME_MS,
+  }
 );
 
 const workers = [simulateEpisodeWorker, simulateAgentEpisodeWorker, aggregateReportWorker];
@@ -66,14 +91,51 @@ for (const w of workers) {
     console.error(`[${w.name}] Job ${job?.id} failed:`, err.message);
     if (err.stack) console.error(err.stack);
   });
+  w.on("stalled", (jobId) => {
+    console.warn(`[${w.name}] Job ${jobId} STALLED — lock expired before job finished. This usually means an LLM call or browser action hung.`);
+  });
+  w.on("error", (err) => {
+    console.error(`[${w.name}] Worker error:`, err.message);
+  });
 }
 
+// Clean up orphaned persona-browser containers from previous crashes
+async function cleanOrphanedContainers() {
+  if (process.env.BROWSER_MODE === "local") return;
+  try {
+    const docker = new Docker();
+    const containers = await docker.listContainers({
+      all: true,
+      filters: { ancestor: ["persona-browser"] },
+    });
+    if (containers.length > 0) {
+      console.log(`[cleanup] Found ${containers.length} orphaned persona-browser container(s), removing...`);
+      for (const c of containers) {
+        try {
+          const container = docker.getContainer(c.Id);
+          await container.stop({ t: 3 }).catch(() => {});
+          await container.remove({ force: true }).catch(() => {});
+          console.log(`[cleanup] Removed container ${c.Id.slice(0, 12)}`);
+        } catch {
+          // Already gone
+        }
+      }
+    } else {
+      console.log("[cleanup] No orphaned containers found");
+    }
+  } catch (err) {
+    console.warn("[cleanup] Could not check for orphaned containers:", err instanceof Error ? err.message : err);
+  }
+}
+
+await cleanOrphanedContainers();
 console.log("All workers running. Waiting for jobs...");
 
-// Graceful shutdown
+// Graceful shutdown — also kill any remaining containers
 async function shutdown() {
   console.log("Shutting down workers...");
   await Promise.all(workers.map((w) => w.close()));
+  await cleanOrphanedContainers();
   process.exit(0);
 }
 

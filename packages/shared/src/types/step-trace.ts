@@ -31,6 +31,7 @@ export const AgentReasoningOutput = z.object({
   friction: z.number().min(0).max(1),
   dropoffRisk: z.number().min(0).max(1),
   memoryUpdate: z.string().optional(),
+  completesGoal: z.boolean().optional(),
 });
 
 export type AgentReasoningOutput = z.infer<typeof AgentReasoningOutput>;

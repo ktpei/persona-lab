@@ -15,6 +15,8 @@ export class BrowserContainer {
   }
 
   async start(): Promise<void> {
+    const t0 = Date.now();
+    console.log(`[container] Creating Docker container from image ${IMAGE_NAME}...`);
     const container = await this.docker.createContainer({
       Image: IMAGE_NAME,
       ExposedPorts: { [`${CONTAINER_CDP_PORT}/tcp`]: {} },
@@ -44,7 +46,9 @@ export class BrowserContainer {
     this.hostPort = parseInt(portBindings[0].HostPort, 10);
 
     // Wait for CDP to be ready
+    console.log(`[container] Container ${this.containerId?.slice(0, 12)} started on port ${this.hostPort}, waiting for CDP...`);
     await this.waitForCDP();
+    console.log(`[container] CDP ready in ${Date.now() - t0}ms`);
   }
 
   getEndpoint(): string {
@@ -54,6 +58,7 @@ export class BrowserContainer {
 
   async stop(): Promise<void> {
     if (!this.containerId) return;
+    console.log(`[container] Stopping container ${this.containerId.slice(0, 12)}...`);
     try {
       const container = this.docker.getContainer(this.containerId);
       await container.stop({ t: 5 }).catch(() => {});
