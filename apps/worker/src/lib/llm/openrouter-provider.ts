@@ -15,7 +15,7 @@ export class OpenRouterProvider implements LLMProvider {
     this.client = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
       apiKey,
-      timeout: 90_000, // 90s — prevent hung LLM calls from stalling the agent forever
+      timeout: 120_000, // 2 min — enough for vision calls on heavy pages
     });
     this.model = model;
   }
@@ -48,33 +48,41 @@ export class OpenRouterProvider implements LLMProvider {
     const base64 = imageBuffer.toString("base64");
     const dataUrl = `data:image/png;base64,${base64}`;
 
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a precise JSON generator. Always respond with valid JSON only, no markdown formatting or extra text.",
-        },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: dataUrl } },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-    });
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a precise JSON generator. Always respond with valid JSON only, no markdown formatting or extra text.",
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      });
 
-    const text = response.choices[0]?.message?.content;
-    if (!text) {
-      throw new Error("No response from LLM for image+JSON");
+      const text = response.choices[0]?.message?.content;
+      if (!text) throw new Error("No response from LLM for image+JSON");
+
+      const parsed = JSON.parse(text);
+      return schema.parse(parsed);
+    } catch (err) {
+      // Model doesn't support vision — fall back to text-only
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("image") || msg.includes("vision") || msg.includes("multimodal")) {
+        console.warn(`[llm] ${this.model} does not support images — falling back to text-only`);
+        return this.completeJSON(prompt + "\n\n(Note: no screenshot available for this step)", schema);
+      }
+      throw err;
     }
-
-    const parsed = JSON.parse(text);
-    return schema.parse(parsed);
   }
 
   async describeImage(imageBuffer: Buffer, prompt: string): Promise<string> {

@@ -24,9 +24,9 @@ export class BrowserContainer {
           [`${CONTAINER_CDP_PORT}/tcp`]: [{ HostPort: "0" }],
         },
         // Limit resources per container
-        Memory: 512 * 1024 * 1024, // 512MB
-        NanoCpus: 1_000_000_000,   // 1 CPU
-        ShmSize: 256 * 1024 * 1024, // 256MB shared memory for Chromium
+        Memory: 1536 * 1024 * 1024, // 1.5GB — heavy sites (e-commerce, SPAs) push Chromium past 512MB
+        NanoCpus: 1_000_000_000,    // 1 CPU
+        ShmSize: 512 * 1024 * 1024, // 512MB shared memory — Chromium crashes with low /dev/shm
         AutoRemove: true,
       },
     });

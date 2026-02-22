@@ -15,7 +15,7 @@ import {
 import type { SimulateAgentEpisodeJob, AggregateReportJob } from "@persona-lab/shared";
 import type { Prisma } from "@prisma/client";
 
-const MAX_STUCK_COUNT = 5;
+const MAX_STUCK_COUNT = 10;
 
 /**
  * Repair common LLM mistakes in the raw JSON before Zod validation.
@@ -37,6 +37,11 @@ function repairRawOutput(raw: Record<string, unknown>): Record<string, unknown> 
       action.type = "click";
       delete action.text;
     }
+  }
+
+  // "scroll" action missing "amount" → default to 0.3 (roughly one viewport)
+  if (action.type === "scroll" && action.amount == null) {
+    action.amount = 0.3;
   }
 
   // "click" action missing "elementIndex" but has coordinates → convert to click_coordinates
@@ -105,9 +110,14 @@ function buildAgentReasoningPrompt(
   stuckCount: number,
   scrollInfo: ScrollInfo,
 ): string {
-  const stuckHint = stuckCount >= 2
-    ? `\n\nWARNING: You have been on the same URL for ${stuckCount} consecutive actions. Try a different approach, navigate elsewhere, or give up if you're stuck.\n`
-    : "";
+  let stuckHint = "";
+  if (stuckCount >= 7) {
+    stuckHint = `\n\n⛔ STUCK ALERT (${stuckCount} actions on same URL): You MUST take a non-scroll action right now. Click a product, use a filter, or navigate away. Scrolling again is not allowed.\n`;
+  } else if (stuckCount >= 4) {
+    stuckHint = `\n\nWARNING (${stuckCount} actions on same URL): Stop scrolling and commit to an action. On a listing page — click the most relevant item you can see, even if it's not perfect. On a product page — click Add to Cart, select a size, or navigate back.\n`;
+  } else if (stuckCount >= 2) {
+    stuckHint = `\n\nHINT: You've scrolled ${stuckCount} times without navigating. If you can see any relevant product or button, click it rather than scrolling again.\n`;
+  }
 
   const memorySection = memory
     ? `\n## Your Memory from Previous Steps\n${memory}\n`
@@ -151,15 +161,18 @@ You ARE this persona. First person. Identify friction, then pick a concrete acti
 
 Analyze this page critically. Identify friction points, confusions, and obstacles from your persona's perspective. Even well-designed pages have minor issues — evaluate strictly based on your behavioral profile.
 
-IMPORTANT: The screenshot and element list only show what is currently visible in the viewport. If the page is taller than the viewport, there is more content above or below that you haven't seen yet. Check the scroll position above — if you haven't seen the full page and can't find what you need, SCROLL DOWN before concluding something is missing.
+**Scrolling vs clicking:**
+- On SEARCH RESULTS or CATEGORY LISTING pages: scroll to discover products, but as soon as you see something relevant, CLICK IT. Do not scroll past products hoping for a better one — click the closest match and evaluate it.
+- On PRODUCT DETAIL pages: scroll to read descriptions, find size/color options, and locate the Add to Cart button. Once you find it, click it.
+- Do not scroll more than 3–4 times on any single page without clicking something.
 
-MANDATORY: You are FORBIDDEN from choosing "done" with success=false if there is unseen content below the viewport. You MUST scroll down to view the entire page before giving up. If the scroll position shows you are not at the bottom, your next action MUST be "scroll" with direction "down".
+**Unseen content:** The screenshot only shows the current viewport. If the page extends below and you have not yet seen a relevant product or button, scroll down before giving up. But do NOT use unseen content as an excuse to scroll indefinitely — if you've seen products and not clicked any, click one now.
 
 Pick ONE concrete browser action to execute:
 - click: click an interactive element by index number. Requires: { "type": "click", "elementIndex": <number> }
 - click_coordinates: click a specific x,y position (only if no element matches). Requires: { "type": "click_coordinates", "x": <number>, "y": <number> }
 - type: type text into an input field. Requires: { "type": "type", "elementIndex": <number>, "text": "<string>", "submit": true|false }. Set "submit": true to press Enter after typing — useful for search bars and forms that have no visible submit button. If there IS a visible search/submit button you want to click, set "submit": false and click the button as a separate action.
-- scroll: scroll to see more content. Requires: { "type": "scroll", "direction": "up" | "down" }
+- scroll: scroll to see more content. Requires: { "type": "scroll", "direction": "up" | "down", "amount": 0.0–1.0 } where amount is a fraction of the total page height (0.1 = small nudge, 0.3 = one screenful, 0.6 = jump far down, 1.0 = bottom of page)
 - navigate_back: go back to the previous page. Requires: { "type": "navigate_back" }
 - wait: wait for the page to load. Requires: { "type": "wait", "reason": "<string>" }
 - done: goal reached or giving up. Requires: { "type": "done", "success": true|false, "reason": "<string>" }
@@ -172,7 +185,7 @@ Respond as JSON:
   "confusions": [
     { "issue": "I couldn't tell which button...", "evidence": "what on screen caused it", "elementRef": "optional element label" }
   ],
-  "browserAction": { "type": "click", "elementIndex": 0 },
+  "browserAction": { "type": "click", "elementIndex": 0 },  // or e.g. { "type": "scroll", "direction": "down", "amount": 0.4 }
   "intent": "CLICK_PRIMARY_CTA",
   "confidence": 0.0 to 1.0,
   "friction": 0.0 to 1.0,
@@ -304,6 +317,24 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`${tag} Step ${stepIdx} LLM FAILED: ${msg}`);
+        // Save an error trace so the debug view shows why the agent stopped
+        await prisma.stepTrace.create({
+          data: {
+            episodeId: episode.id,
+            stepIndex: stepIdx,
+            screenshotPath: screenshotKey,
+            observation: {
+              url: currentUrl,
+              pageTitle,
+              elementCount: totalElementCount || elements.length,
+            },
+            reasoning: { error: msg, salient: `[STEP FAILED] ${msg}`, confusions: [], intent: "ABANDON" } as unknown as Prisma.InputJsonValue,
+            action: "ABANDON",
+            confidence: 0,
+            friction: 1,
+            dropoffRisk: 1,
+          },
+        }).catch(() => {}); // best-effort
         episodeStatus = "FAILED";
         break;
       }
@@ -343,7 +374,7 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         if (!hasSeenBottom) {
           const unseen = scrollInfo.pageHeight - bottomEdge;
           console.log(`${tag} Step ${stepIdx}: agent wants to abandon but ${unseen}px unseen below — forcing scroll`);
-          await session.executeAction({ type: "scroll", direction: "down" as const }, elements);
+          await session.executeAction({ type: "scroll", direction: "down" as const, amount: 0.3 }, elements, scrollInfo.pageHeight);
           continue;
         }
       }
@@ -357,7 +388,7 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
 
       // Execute the browser action
       try {
-        await session.executeAction(reasoning.browserAction, elements);
+        await session.executeAction(reasoning.browserAction, elements, scrollInfo.pageHeight);
         const actionType = reasoning.browserAction.type;
         if (actionType === "type" || actionType === "click" || actionType === "click_coordinates") {
           lastActionWasInteraction = true;

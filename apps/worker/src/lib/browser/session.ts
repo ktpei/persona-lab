@@ -66,7 +66,7 @@ export class BrowserSession {
     return Buffer.from(await this.page!.screenshot({ type: "png", fullPage: false }));
   }
 
-  async executeAction(action: BrowserAction, elements: InteractiveElement[]): Promise<void> {
+  async executeAction(action: BrowserAction, elements: InteractiveElement[], pageHeight?: number): Promise<void> {
     this.ensurePage();
     const page = this.page!;
 
@@ -104,9 +104,11 @@ export class BrowserSession {
       }
 
       case "scroll": {
-        const delta = action.direction === "down" ? 400 : -400;
+        const amount = action.amount ?? 0.3;
+        const height = pageHeight ?? 3000;
+        const delta = Math.round(amount * height) * (action.direction === "down" ? 1 : -1);
         await page.mouse.wheel(0, delta);
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 800)); // wait for lazy-loaded content
         break;
       }
 

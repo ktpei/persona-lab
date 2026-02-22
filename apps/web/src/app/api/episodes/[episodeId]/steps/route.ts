@@ -19,6 +19,7 @@ interface StepReasoning {
   intent?: string;
   browserAction?: BrowserAction;
   memoryUpdate?: string;
+  error?: string;
 }
 
 export async function GET(
@@ -85,6 +86,7 @@ export async function GET(
       memoryUpdate: r?.memoryUpdate,
       url: obs?.url,
       elementCount: obs?.elementCount,
+      error: r?.error,
     };
   });
 
