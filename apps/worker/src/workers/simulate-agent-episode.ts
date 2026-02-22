@@ -5,7 +5,7 @@ import { createLLMProvider } from "../lib/llm/openrouter-provider.js";
 import { getRedisOpts } from "../lib/redis.js";
 import { BrowserContainer } from "../lib/browser/container.js";
 import { BrowserSession } from "../lib/browser/session.js";
-import { extractInteractiveElements, formatElementList } from "../lib/browser/extract-elements.js";
+import { extractInteractiveElements, formatElementList, prioritizeElements } from "../lib/browser/extract-elements.js";
 import type { InteractiveElement } from "../lib/browser/extract-elements.js";
 import {
   AgentReasoningOutput,
@@ -262,12 +262,19 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
 
       // Extract interactive elements
       let elements: InteractiveElement[] = [];
+      let totalElementCount = 0;
       try {
-        elements = await extractInteractiveElements(session.page!);
+        const raw = await extractInteractiveElements(session.page!);
+        totalElementCount = raw.length;
+        const { elements: prioritized, totalOriginal } = prioritizeElements(raw, scrollInfo.viewportHeight);
+        elements = prioritized;
+        if (totalOriginal > elements.length) {
+          console.log(`${tag} Step ${stepIdx}: elements ${totalOriginal} → ${elements.length} after prioritization`);
+        }
       } catch (err) {
         console.warn(`${tag} Step ${stepIdx}: element extraction failed:`, err);
       }
-      const elementList = formatElementList(elements);
+      const elementList = formatElementList(elements, totalElementCount > elements.length ? totalElementCount : undefined);
 
       // Build prompt and call LLM
       const prompt = buildAgentReasoningPrompt(
@@ -311,7 +318,7 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
           observation: {
             url: currentUrl,
             pageTitle,
-            elementCount: elements.length,
+            elementCount: totalElementCount || elements.length,
           },
           reasoning: reasoning as unknown as Prisma.InputJsonValue,
           action: reasoning.intent,

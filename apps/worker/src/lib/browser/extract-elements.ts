@@ -11,6 +11,106 @@ export interface InteractiveElement {
   bbox: { x: number; y: number; width: number; height: number };
 }
 
+const MAX_ELEMENTS = 50;
+
+function normalizeKey(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 40);
+}
+
+function normalizeHref(href: string | null): string {
+  if (!href || href === "#") return "";
+  try {
+    const url = new URL(href, "http://x");
+    return url.pathname.slice(0, 50);
+  } catch {
+    return href.slice(0, 50);
+  }
+}
+
+function deduplicateElements(
+  elements: InteractiveElement[],
+  keyFn: (el: InteractiveElement) => string,
+  maxPerGroup: number,
+): InteractiveElement[] {
+  const counts = new Map<string, number>();
+  const result: InteractiveElement[] = [];
+  for (const el of elements) {
+    const key = keyFn(el);
+    const n = counts.get(key) ?? 0;
+    if (n < maxPerGroup) {
+      result.push(el);
+      counts.set(key, n + 1);
+    }
+  }
+  return result;
+}
+
+/**
+ * Prioritize and cap the element list before sending to the LLM.
+ *
+ * Priority order:
+ *   1. Form controls (input, select, textarea) — always kept
+ *   2. Buttons — deduped by text, max 2 per unique label
+ *   3. In-viewport links — deduped by (text, href path), max 2 per group
+ *   4. Out-of-viewport links — deduped more aggressively, max 1 per group
+ *
+ * Capped at MAX_ELEMENTS total, then re-indexed from 0.
+ */
+export function prioritizeElements(
+  elements: InteractiveElement[],
+  viewportHeight: number,
+  max = MAX_ELEMENTS,
+): { elements: InteractiveElement[]; totalOriginal: number } {
+  const totalOriginal = elements.length;
+
+  const formControls = elements.filter((e) =>
+    ["input", "select", "textarea"].includes(e.tag)
+  );
+
+  const buttons = elements.filter(
+    (e) =>
+      (e.tag === "button" || e.role === "button") &&
+      !["input", "select", "textarea"].includes(e.tag)
+  );
+
+  const links = elements.filter(
+    (e) =>
+      !["input", "select", "textarea", "button"].includes(e.tag) &&
+      e.role !== "button"
+  );
+
+  const dedupedButtons = deduplicateElements(
+    buttons,
+    (el) => normalizeKey(el.text),
+    2,
+  );
+
+  const inViewLinks = links.filter((e) => e.bbox.y >= 0 && e.bbox.y < viewportHeight);
+  const outLinks = links.filter((e) => e.bbox.y < 0 || e.bbox.y >= viewportHeight);
+
+  const dedupedInView = deduplicateElements(
+    inViewLinks,
+    (el) => normalizeKey(el.text) + "|" + normalizeHref(el.href),
+    2,
+  );
+
+  const dedupedOut = deduplicateElements(
+    outLinks,
+    (el) => normalizeKey(el.text) + "|" + normalizeHref(el.href),
+    1,
+  );
+
+  const combined = [
+    ...formControls,
+    ...dedupedButtons,
+    ...dedupedInView,
+    ...dedupedOut,
+  ].slice(0, max);
+
+  const reindexed = combined.map((el, i) => ({ ...el, index: i }));
+  return { elements: reindexed, totalOriginal };
+}
+
 const INTERACTIVE_SELECTOR = [
   "a[href]",
   "button",
@@ -71,11 +171,12 @@ export async function extractInteractiveElements(page: Page): Promise<Interactiv
 
 /**
  * Format interactive elements as a numbered text list for the LLM prompt.
+ * Pass totalOriginal to append a note when the list was trimmed.
  */
-export function formatElementList(elements: InteractiveElement[]): string {
+export function formatElementList(elements: InteractiveElement[], totalOriginal?: number): string {
   if (elements.length === 0) return "(No interactive elements found on this page)";
 
-  return elements.map((el) => {
+  const lines = elements.map((el) => {
     const parts: string[] = [];
 
     // Tag/role description
@@ -104,5 +205,11 @@ export function formatElementList(elements: InteractiveElement[]): string {
     parts.push(`(${el.bbox.x}, ${el.bbox.y}, ${el.bbox.width}x${el.bbox.height})`);
 
     return `[${el.index}] ${parts.join(" ")}`;
-  }).join("\n");
+  });
+
+  if (totalOriginal != null && totalOriginal > elements.length) {
+    lines.push(`(${totalOriginal - elements.length} additional elements hidden — deduplicated/trimmed to reduce noise)`);
+  }
+
+  return lines.join("\n");
 }
