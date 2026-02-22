@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { PersonaChat } from "@/components/persona-chat";
+import { VoiceCall } from "@/components/voice-call";
 import {
   AlertTriangle,
   MessageCircle,
@@ -13,6 +14,7 @@ import {
   BarChart3,
   ChevronDown,
   FileText,
+  Phone,
 } from "lucide-react";
 
 interface Episode {
@@ -120,6 +122,7 @@ export default function RunDetail() {
   const [loadingSteps, setLoadingSteps] = useState<Set<string>>(new Set());
   const [overview, setOverview] = useState<string | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  const [voiceCallEpisode, setVoiceCallEpisode] = useState<{ id: string; personaName: string } | null>(null);
 
   const loadRun = useCallback(() => {
     fetch(`/api/runs/${runId}`)
@@ -344,15 +347,24 @@ export default function RunDetail() {
                           </div>
                           <span className="text-xs text-muted-foreground shrink-0">{pp.stepsCount} steps</span>
                         </div>
-                        {/* Chat button */}
+                        {/* Chat + Voice buttons */}
                         {episode && run.status === "COMPLETED" && (
-                          <button
-                            onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors shrink-0"
-                          >
-                            <MessageCircle className="w-3 h-3" />
-                            Chat
-                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => setChatEpisode({ id: episode.id, personaName: pp.personaName })}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            >
+                              <MessageCircle className="w-3 h-3" />
+                              Chat
+                            </button>
+                            <button
+                              onClick={() => setVoiceCallEpisode({ id: episode.id, personaName: pp.personaName })}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
+                            >
+                              <Phone className="w-3 h-3" />
+                              Voice
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -441,6 +453,14 @@ export default function RunDetail() {
           episodeId={chatEpisode.id}
           personaName={chatEpisode.personaName}
           onClose={() => setChatEpisode(null)}
+        />
+      )}
+
+      {voiceCallEpisode && (
+        <VoiceCall
+          episodeId={voiceCallEpisode.id}
+          personaName={voiceCallEpisode.personaName}
+          onClose={() => setVoiceCallEpisode(null)}
         />
       )}
     </div>

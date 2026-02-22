@@ -12,6 +12,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@elevenlabs/react": "^0.14.0",
     "@persona-lab/shared": "workspace:*",
     "@prisma/client": "^6.2.0",
     "@radix-ui/react-checkbox": "^1.1.0",
