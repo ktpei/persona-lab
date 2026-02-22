@@ -4,13 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { PersonaChat } from "@/components/persona-chat";
-import { VoiceSessionPanel } from "@/components/voice/VoiceSessionPanel";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { VoiceCall } from "@/components/voice-call";
 import {
   AlertTriangle,
   MessageCircle,
@@ -127,9 +121,7 @@ export default function RunDetail() {
   const [episodeSteps, setEpisodeSteps] = useState<Map<string, StepData[]>>(new Map());
   const [loadingSteps, setLoadingSteps] = useState<Set<string>>(new Set());
   const [overview, setOverview] = useState<string | null>(null);
-  const [voiceSessionOpen, setVoiceSessionOpen] = useState(false);
-  const [personas, setPersonas] = useState<any[]>([]);
-  const [flows, setFlows] = useState<any[]>([]);
+  const [voiceCallEpisode, setVoiceCallEpisode] = useState<{ id: string; personaName: string } | null>(null);
 
   const loadRun = useCallback(() => {
     fetch(`/api/runs/${runId}`)
@@ -140,19 +132,6 @@ export default function RunDetail() {
   useEffect(() => {
     loadRun();
   }, [loadRun]);
-
-  useEffect(() => {
-    if (!params.id) return;
-    
-    // Fetch personas and flows for the project
-    Promise.all([
-      fetch(`/api/projects/${params.id}/personas`).then(r => r.json()),
-      fetch(`/api/projects/${params.id}/flows`).then(r => r.json())
-    ]).then(([personasData, flowsData]) => {
-      setPersonas(personasData);
-      setFlows(flowsData);
-    });
-  }, [params.id]);
 
   useEffect(() => {
     if (!run || run.status === "COMPLETED" || run.status === "FAILED") return;
@@ -403,7 +382,7 @@ export default function RunDetail() {
                               Chat
                             </button>
                             <button
-                              onClick={() => setVoiceSessionOpen(true)}
+                              onClick={() => setVoiceCallEpisode({ id: episode.id, personaName: pp.personaName })}
                               className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border border-border/60 text-foreground hover:bg-muted/40 transition-colors"
                             >
                               <Phone className="w-3 h-3" />
@@ -501,21 +480,12 @@ export default function RunDetail() {
         />
       )}
 
-      {voiceSessionOpen && (
-        <Dialog open={voiceSessionOpen} onOpenChange={setVoiceSessionOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Voice Session</DialogTitle>
-            </DialogHeader>
-            <div className="pt-2">
-              <VoiceSessionPanel
-                personas={personas.map((p: any) => ({ id: p.id, name: p.name }))}
-                flows={flows.map((f: any) => ({ id: f.id, name: f.name, _count: f._count }))}
-                onClose={() => setVoiceSessionOpen(false)}
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+      {voiceCallEpisode && (
+        <VoiceCall
+          episodeId={voiceCallEpisode.id}
+          personaName={voiceCallEpisode.personaName}
+          onClose={() => setVoiceCallEpisode(null)}
+        />
       )}
     </div>
   );
