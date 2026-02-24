@@ -288,6 +288,9 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
   let lastActionWasInteraction = false; // typing/clicking counts as progress even if URL didn't change
   let forcedScrollCount = 0;
   const MAX_FORCED_SCROLLS = 3; // don't force more than 3 scrolls before allowing abandon
+  let consecutiveOverlayCount = 0; // how many steps in a row had an overlay without a URL change
+  const MAX_CONSECUTIVE_OVERLAYS = 6; // force abandon if stuck dismissing the same modal
+  let urlAtStepStart = ""; // URL as of the END of the previous step — for overlay loop detection
 
   // Check cancellation BEFORE creating container to avoid wasting resources
   if (await isRunCancelled(job.runId)) {
@@ -327,6 +330,9 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
       const currentUrl = await session.getUrl();
       const pageTitle = await session.getTitle();
 
+      // Capture URL before prevUrl is updated — used for overlay loop detection below
+      const urlChangedThisStep = currentUrl !== urlAtStepStart;
+
       // Track stuck detection — typing/clicking always counts as progress
       if (currentUrl !== prevUrl) {
         stuckCount = 0;
@@ -362,6 +368,20 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         }
       } catch {
         // Non-critical — continue without overlay info
+      }
+
+      // Track consecutive overlay steps without URL change — if the agent keeps
+      // dismissing the same blocking modal without navigating, force abandon.
+      // Uses urlAtStepStart (URL at end of previous step) so a URL change this step resets the count.
+      if (overlayDetected && !urlChangedThisStep) {
+        consecutiveOverlayCount++;
+      } else {
+        consecutiveOverlayCount = 0;
+      }
+      if (consecutiveOverlayCount >= MAX_CONSECUTIVE_OVERLAYS) {
+        console.log(`${tag} Step ${stepIdx}: modal loop detected (${consecutiveOverlayCount} consecutive overlays on ${currentUrl}) — forcing ABANDONED`);
+        episodeStatus = "ABANDONED";
+        break;
       }
 
       // Capture screenshot
@@ -434,12 +454,27 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         break;
       }
 
-      // Create StepTrace (frameId is null for agent mode)
-      await prisma.stepTrace.create({
-        data: {
+      // Upsert StepTrace — use upsert so stalled-job retries don't crash on
+      // the unique (episodeId, stepIndex) constraint when replaying from step 0.
+      await prisma.stepTrace.upsert({
+        where: { episodeId_stepIndex: { episodeId: episode.id, stepIndex: stepIdx } },
+        create: {
           episodeId: episode.id,
           stepIndex: stepIdx,
-          // frameId is null for agent mode
+          screenshotPath: screenshotKey,
+          observation: {
+            url: currentUrl,
+            pageTitle,
+            elementCount: elements.length,
+          },
+          reasoning: reasoning as unknown as Prisma.InputJsonValue,
+          action: reasoning.intent,
+          confidence: reasoning.confidence,
+          friction: reasoning.friction,
+          dropoffRisk: reasoning.dropoffRisk,
+          memory: reasoning.memoryUpdate || null,
+        },
+        update: {
           screenshotPath: screenshotKey,
           observation: {
             url: currentUrl,
@@ -513,6 +548,9 @@ export async function handleSimulateAgentEpisode(job: SimulateAgentEpisodeJob) {
         episodeStatus = "COMPLETED";
         break;
       }
+
+      // Record URL after action for overlay loop detection next step
+      urlAtStepStart = await session.getUrl();
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
