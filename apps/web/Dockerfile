@@ -20,7 +20,6 @@ RUN npx prisma@6 generate --schema=apps/web/prisma/schema.prisma
 # Copy source and build
 COPY packages/shared/src/ packages/shared/src/
 COPY apps/web/src/ apps/web/src/
-COPY apps/web/public/ apps/web/public/
 
 RUN pnpm --filter @persona-lab/shared build && \
     pnpm --filter @persona-lab/web build
@@ -39,7 +38,6 @@ ENV HOSTNAME=0.0.0.0
 # Standalone output is self-contained (includes trimmed node_modules)
 COPY --from=builder /build/apps/web/.next/standalone ./
 COPY --from=builder /build/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /build/apps/web/public ./apps/web/public
 
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
