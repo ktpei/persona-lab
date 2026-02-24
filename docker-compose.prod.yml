@@ -1,43 +1,75 @@
 services:
   postgres:
     image: postgres:17-alpine
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=persona
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-persona}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=persona_lab
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
     restart: unless-stopped
 
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://persona:${POSTGRES_PASSWORD}@postgres:5432/persona_lab
+      - REDIS_URL=redis://redis:6379
+      - UPLOAD_DIR=/data/uploads
+      - NEXTAUTH_URL=https://trypersonalab.com
+    volumes:
+      - uploads-data:/data/uploads
+    restart: unless-stopped
+
   worker:
-    image: persona-worker
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
     depends_on:
       - redis
       - postgres
     volumes:
-      # Mount Docker socket so the worker can spawn persona-browser containers
       - /var/run/docker.sock:/var/run/docker.sock
+      - uploads-data:/data/uploads
     env_file:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://persona:${POSTGRES_PASSWORD:-persona}@postgres:5432/persona_lab
-      # Override these to scale concurrency per instance
-      - EPISODE_CONCURRENCY=${EPISODE_CONCURRENCY:-2}
+      - DATABASE_URL=postgresql://persona:${POSTGRES_PASSWORD}@postgres:5432/persona_lab
+      - UPLOAD_DIR=/data/uploads
+      - EPISODE_CONCURRENCY=${EPISODE_CONCURRENCY:-1}
       - AGENT_CONCURRENCY=${AGENT_CONCURRENCY:-2}
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
 volumes:
-  redis-data:
   postgres-data:
+  redis-data:
+  uploads-data:
+  caddy-data:
+  caddy-config:

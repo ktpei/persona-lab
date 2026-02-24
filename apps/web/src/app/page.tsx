@@ -11,8 +11,7 @@ const instrumentSerif = Instrument_Serif({
   variable: "--font-display",
 });
 
-// ─── Replace this with your actual YouTube video ID when ready ───
-const YOUTUBE_VIDEO_ID = "YOUR_VIDEO_ID_HERE";
+const YOUTUBE_VIDEO_ID = "19Ds9QMQLrI";
 
 export default function LandingPage() {
   return (
@@ -360,61 +359,13 @@ export default function LandingPage() {
             backgroundColor: "#141210",
           }}
         >
-          {YOUTUBE_VIDEO_ID === "YOUR_VIDEO_ID_HERE" ? (
-            // Placeholder shown before the YouTube ID is set
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "12px",
-              }}
-            >
-              <div
-                style={{
-                  width: "48px",
-                  height: "48px",
-                  borderRadius: "50%",
-                  border: "1px solid rgba(122,146,176,0.2)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <div
-                  style={{
-                    width: 0,
-                    height: 0,
-                    borderTop: "8px solid transparent",
-                    borderBottom: "8px solid transparent",
-                    borderLeft: "14px solid rgba(122,146,176,0.4)",
-                    marginLeft: "3px",
-                  }}
-                />
-              </div>
-              <p
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: "11px",
-                  color: "rgba(245,242,239,0.2)",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                Video coming soon
-              </p>
-            </div>
-          ) : (
-            <iframe
-              src={`https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?rel=0&modestbranding=1`}
-              title="PersonaLab Demo"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              style={{ width: "100%", height: "100%", border: "none" }}
-            />
-          )}
+          <iframe
+            src={`https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?rel=0&modestbranding=1`}
+            title="PersonaLab Demo"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            style={{ width: "100%", height: "100%", border: "none" }}
+          />
         </div>
       </section>
 
