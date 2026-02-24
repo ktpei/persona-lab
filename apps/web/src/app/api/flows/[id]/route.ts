@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 import { z } from "zod";
+
+async function getFlowWithOwner(id: string) {
+  return prisma.flow.findUnique({
+    where: { id },
+    include: { project: { select: { userId: true } } },
+  });
+}
 
 export async function GET(
   _req: NextRequest,
@@ -32,25 +40,45 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await params;
+  const flow = await getFlowWithOwner(id);
+  if (!flow) {
+    return NextResponse.json({ error: "Flow not found" }, { status: 404 });
+  }
+  if (flow.project.userId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await req.json();
   const input = UpdateFlowInput.parse(body);
 
-  const flow = await prisma.flow.update({
-    where: { id },
-    data: input,
-  });
-
-  return NextResponse.json(flow);
+  const updated = await prisma.flow.update({ where: { id }, data: input });
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await params;
+  const flow = await getFlowWithOwner(id);
+  if (!flow) {
+    return NextResponse.json({ error: "Flow not found" }, { status: 404 });
+  }
+  if (flow.project.userId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   await prisma.flow.delete({ where: { id } });
-
   return new NextResponse(null, { status: 204 });
 }

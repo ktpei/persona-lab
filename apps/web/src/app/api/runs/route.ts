@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 import { simulateEpisodeQueue, simulateAgentEpisodeQueue } from "@/lib/queue";
 import { RunConfig, QUEUE_NAMES } from "@persona-lab/shared";
 import { z } from "zod";
@@ -7,31 +8,37 @@ import { z } from "zod";
 const CreateRunInput = z.object({
   flowId: z.string(),
   personaIds: z.array(z.string()).min(1),
-  userId: z.string(),
   config: RunConfig.optional().default({}),
 });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await req.json();
   const input = CreateRunInput.parse(body);
   const config = RunConfig.parse(input.config);
 
-  // Look up flow to determine mode
+  // Look up flow to determine mode and verify ownership via project
   const flow = await prisma.flow.findUnique({
     where: { id: input.flowId },
-    select: { mode: true, url: true, goal: true },
+    select: { mode: true, url: true, goal: true, project: { select: { userId: true } } },
   });
   if (!flow) {
     return NextResponse.json({ error: "Flow not found" }, { status: 404 });
   }
+  if (flow.project.userId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const isAgent = flow.mode === "AGENT";
 
-  // Create run with persona associations and episodes
   const run = await prisma.run.create({
     data: {
       flowId: input.flowId,
-      userId: input.userId,
+      userId: session.user.id,
       config,
       mode: flow.mode,
       status: "SIMULATING",
@@ -51,7 +58,6 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Enqueue appropriate jobs based on flow mode
   for (const episode of run.episodes) {
     if (isAgent) {
       await simulateAgentEpisodeQueue.add(QUEUE_NAMES.SIMULATE_AGENT_EPISODE, {

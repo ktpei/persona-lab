@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Sun, Moon, Command } from "lucide-react";
+import { Sun, Moon, Command, LogOut } from "lucide-react";
+import { signOut } from "next-auth/react";
 
 interface Crumb {
   label: string;
@@ -11,9 +12,9 @@ interface Crumb {
 }
 
 function deriveBreadcrumbs(pathname: string): Crumb[] {
-  if (pathname === "/") return [{ label: "Overview" }];
+  if (pathname === "/dashboard") return [{ label: "Overview" }];
 
-  const crumbs: Crumb[] = [{ label: "Overview", href: "/" }];
+  const crumbs: Crumb[] = [{ label: "Overview", href: "/dashboard" }];
 
   const projectMatch = pathname.match(/^\/projects\/([^/]+)/);
   if (!projectMatch) return crumbs;
@@ -95,6 +96,13 @@ export function TopHeader() {
           title={dark ? "Switch to light mode" : "Switch to dark mode"}
         >
           {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="rounded p-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-muted/40 transition-colors"
+          title="Sign out"
+        >
+          <LogOut className="h-3.5 w-3.5" />
         </button>
       </div>
     </header>
