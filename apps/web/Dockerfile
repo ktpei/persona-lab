@@ -8,7 +8,7 @@ WORKDIR /build
 
 # Copy workspace config first for layer caching
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
-COPY apps/web/package.json apps/web/tsconfig.json apps/web/next.config.mjs apps/web/
+COPY apps/web/package.json apps/web/tsconfig.json apps/web/next.config.mjs apps/web/postcss.config.mjs apps/web/
 COPY packages/shared/package.json packages/shared/tsconfig.json packages/shared/
 
 RUN pnpm install --frozen-lockfile
