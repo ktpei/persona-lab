@@ -67,7 +67,9 @@ export class BrowserSession {
 
   async screenshot(): Promise<Buffer> {
     this.ensurePage();
-    return Buffer.from(await this.page!.screenshot({ type: "png", fullPage: false }));
+    // Use an explicit 30s timeout — the global setDefaultTimeout(10s) is too short
+    // for slow pages, and "waiting for fonts to load" can push past 10s.
+    return Buffer.from(await this.page!.screenshot({ type: "png", fullPage: false, timeout: 30_000 }));
   }
 
   async executeAction(action: BrowserAction, elements: InteractiveElement[]): Promise<void> {
