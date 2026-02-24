@@ -7,6 +7,7 @@ import { z } from "zod";
 const CreateRunInput = z.object({
   flowId: z.string(),
   personaIds: z.array(z.string()).min(1),
+  userId: z.string(),
   config: RunConfig.optional().default({}),
 });
 
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
   const run = await prisma.run.create({
     data: {
       flowId: input.flowId,
+      userId: input.userId,
       config,
       mode: flow.mode,
       status: "SIMULATING",
