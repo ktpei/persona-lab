@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 import { z } from "zod";
 import { PersonaTraits, AgeGroup, Gender } from "@persona-lab/shared";
 
 const BatchSaveInput = z.object({
   projectId: z.string(),
-  userId: z.string(),
   personas: z.array(
     z.object({
       name: z.string().min(1),
@@ -20,6 +20,11 @@ const BatchSaveInput = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await req.json();
   const input = BatchSaveInput.parse(body);
 
@@ -28,7 +33,7 @@ export async function POST(req: NextRequest) {
       prisma.persona.create({
         data: {
           projectId: input.projectId,
-          userId: input.userId,
+          userId: session.user.id,
           name: p.name,
           ageGroup: p.ageGroup,
           gender: p.gender,

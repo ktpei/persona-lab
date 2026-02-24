@@ -261,7 +261,7 @@ export default function ProjectDetail() {
     setDeleting(true);
     const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
     if (res.ok) {
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     }
     setDeleting(false);

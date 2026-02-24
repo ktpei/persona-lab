@@ -22,6 +22,7 @@ export function Sidebar() {
 
   const projectMatch = pathname.match(/^\/projects\/([^/]+)/);
   const activeProjectId = projectMatch?.[1] ?? null;
+  const isDashboard = pathname === "/dashboard";
 
   useEffect(() => {
     fetch("/api/projects")
@@ -46,7 +47,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 pt-3 space-y-0.5">
         {/* New Project */}
         <Link
-          href="/"
+          href="/dashboard"
           className="flex items-center gap-2 rounded px-2.5 py-1.5 text-[13px] font-medium text-primary hover:bg-primary/5 transition-colors"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -55,9 +56,9 @@ export function Sidebar() {
 
         {/* Overview */}
         <Link
-          href="/"
+          href="/dashboard"
           className={`flex items-center gap-2 rounded px-2.5 py-1.5 text-[13px] transition-colors ${
-            pathname === "/" && !activeProjectId
+            isDashboard && !activeProjectId
               ? "bg-muted text-foreground font-medium"
               : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           }`}

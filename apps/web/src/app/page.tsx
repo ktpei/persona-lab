@@ -1,282 +1,459 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Instrument_Serif } from "next/font/google";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  FolderOpen,
-  Plus,
-  Search,
-  Trash2,
-  AlertTriangle,
-  ArrowRight,
-  Activity,
-  Users,
-  Workflow,
-} from "lucide-react";
+import { FlaskConical } from "lucide-react";
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  createdAt: string;
-  _count: { flows: number; personas: number; runs?: number };
-}
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-display",
+});
 
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
+// ─── Replace this with your actual YouTube video ID when ready ───
+const YOUTUBE_VIDEO_ID = "YOUR_VIDEO_ID_HERE";
 
-export default function Dashboard() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [search, setSearch] = useState("");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [open, setOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then(setProjects);
-  }, []);
-
-  async function createProject() {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description: description || undefined }),
-    });
-    if (res.ok) {
-      const project = await res.json();
-      setProjects((prev) => [
-        { ...project, _count: { flows: 0, personas: 0, runs: 0 } },
-        ...prev,
-      ]);
-      setName("");
-      setDescription("");
-      setOpen(false);
-    }
-  }
-
-  async function deleteProject() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    const res = await fetch(`/api/projects/${deleteTarget.id}`, { method: "DELETE" });
-    if (res.ok) {
-      setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
-      setDeleteTarget(null);
-    }
-    setDeleting(false);
-  }
-
-  const filtered = search
-    ? projects.filter(
-        (p) =>
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.description?.toLowerCase().includes(search.toLowerCase())
-      )
-    : projects;
-
+export default function LandingPage() {
   return (
-    <div className="space-y-6">
-      {/* Header row */}
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground tracking-tight">Projects</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {projects.length} project{projects.length !== 1 ? "s" : ""}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-48 rounded border border-border/60 bg-transparent pl-8 pr-3 text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors"
-            />
-          </div>
-
-          {/* Create Project */}
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gap-1.5 h-8 text-[13px]">
-                <Plus className="h-3.5 w-3.5" />
-                New project
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create project</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="name" className="text-[13px]">Name</Label>
-                  <Input
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="My App Redesign"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="desc" className="text-[13px]">Description <span className="text-muted-foreground/50 font-normal">optional</span></Label>
-                  <Input
-                    id="desc"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Testing the new checkout flow"
-                  />
-                </div>
-                <Button onClick={createProject} disabled={!name.trim()} className="w-full">
-                  Create
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="h-px bg-border/40" />
-
-      {/* Project cards */}
-      {filtered.length === 0 && projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded border border-dashed border-border/50 py-20">
-          <div className="flex h-10 w-10 items-center justify-center rounded bg-muted">
-            <FolderOpen className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <p className="mt-4 text-[15px] font-medium text-foreground">No projects yet</p>
-          <p className="mt-1 text-[13px] text-muted-foreground">
-            Create your first project to get started.
-          </p>
-          <Button
-            size="sm"
-            className="mt-4 gap-1.5"
-            onClick={() => setOpen(true)}
+    <div
+      className={instrumentSerif.variable}
+      style={{ backgroundColor: "#1F1A17", color: "#f5f2ef", minHeight: "100vh" }}
+    >
+      {/* ── Nav ── */}
+      <nav
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 50,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 2rem",
+          height: "52px",
+          borderBottom: "1px solid rgba(58,53,48,0.6)",
+          backgroundColor: "rgba(31,26,23,0.85)",
+          backdropFilter: "blur(8px)",
+        }}
+      >
+        {/* Logo */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "24px",
+              height: "24px",
+              borderRadius: "4px",
+              backgroundColor: "rgba(122,146,176,0.15)",
+            }}
           >
-            <Plus className="h-3.5 w-3.5" />
-            New project
-          </Button>
-        </div>
-      ) : filtered.length === 0 ? (
-        <p className="text-[13px] text-muted-foreground py-8 text-center">
-          No projects match &ldquo;{search}&rdquo;
-        </p>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((p) => (
-            <Link key={p.id} href={`/projects/${p.id}`}>
-              <div className="group relative rounded border border-border/50 bg-card p-5 transition-all hover:border-border hover:bg-card/80">
-                {/* Delete button */}
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDeleteTarget(p);
-                  }}
-                  className="absolute top-4 right-4 rounded p-1 text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-
-                {/* Project initial */}
-                <div className="flex h-8 w-8 items-center justify-center rounded bg-primary/10 text-[13px] font-semibold text-primary">
-                  {p.name.charAt(0).toUpperCase()}
-                </div>
-
-                {/* Name + description */}
-                <h3 className="mt-3 text-[15px] font-medium text-foreground group-hover:text-primary transition-colors leading-snug">
-                  {p.name}
-                </h3>
-                {p.description && (
-                  <p className="mt-1 text-[13px] text-muted-foreground/70 line-clamp-2 leading-relaxed">
-                    {p.description}
-                  </p>
-                )}
-
-                {/* Stats row */}
-                <div className="mt-4 flex items-center gap-4 text-[12px] text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Workflow className="h-3 w-3" />
-                    <span className="font-mono">{p._count.flows}</span> flows
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3 w-3" />
-                    <span className="font-mono">{p._count.personas}</span> personas
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Activity className="h-3 w-3" />
-                    <span className="font-mono">{p._count.runs ?? 0}</span> runs
-                  </span>
-                </div>
-
-                {/* Footer */}
-                <div className="mt-4 pt-3 border-t border-border/30 flex items-center justify-between">
-                  <span className="text-[11px] text-muted-foreground/50 font-mono">
-                    {timeAgo(p.createdAt)}
-                  </span>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {/* Delete confirmation dialog */}
-      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              Delete project
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-[13px] text-muted-foreground leading-relaxed">
-              Are you sure you want to delete <span className="font-medium text-foreground">{deleteTarget?.name}</span>?
-              This will permanently remove all flows, personas, runs, and findings.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={deleteProject}
-                disabled={deleting}
-              >
-                {deleting ? "Deleting..." : "Delete"}
-              </Button>
-            </div>
+            <FlaskConical size={14} color="#7A92B0" />
           </div>
-        </DialogContent>
-      </Dialog>
+          <span
+            style={{
+              fontFamily: "'Source Serif 4', serif",
+              fontSize: "15px",
+              fontWeight: 600,
+              letterSpacing: "-0.01em",
+              color: "#f5f2ef",
+            }}
+          >
+            Persona<em style={{ fontStyle: "italic" }}>Lab</em>
+          </span>
+        </div>
+
+        {/* Nav link */}
+        <Link
+          href="/dashboard"
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: "12px",
+            color: "rgba(245,242,239,0.45)",
+            textDecoration: "none",
+            letterSpacing: "0.04em",
+            transition: "color 0.15s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#f5f2ef")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(245,242,239,0.45)")}
+        >
+          Enter App →
+        </Link>
+      </nav>
+
+      {/* ── Hero ── */}
+      <section
+        style={{
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "calc(100vh - 52px)",
+          padding: "80px 2rem 120px",
+          overflow: "hidden",
+          textAlign: "center",
+        }}
+      >
+        {/* Animated rings */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+          }}
+        >
+          {/* Outer ring */}
+          <div
+            style={{
+              position: "absolute",
+              width: "720px",
+              height: "720px",
+              borderRadius: "50%",
+              border: "1px dashed rgba(122,146,176,0.12)",
+              animation: "land-ring-spin 90s linear infinite",
+            }}
+          />
+          {/* Middle ring */}
+          <div
+            style={{
+              position: "absolute",
+              width: "500px",
+              height: "500px",
+              borderRadius: "50%",
+              border: "1px dashed rgba(122,146,176,0.18)",
+              animation: "land-ring-spin-reverse 65s linear infinite",
+            }}
+          />
+          {/* Inner ring */}
+          <div
+            style={{
+              position: "absolute",
+              width: "320px",
+              height: "320px",
+              borderRadius: "50%",
+              border: "1px solid rgba(122,146,176,0.10)",
+              animation: "land-ring-spin 40s linear infinite",
+            }}
+          />
+          {/* Center dot */}
+          <div
+            style={{
+              position: "absolute",
+              width: "4px",
+              height: "4px",
+              borderRadius: "50%",
+              backgroundColor: "rgba(122,146,176,0.4)",
+            }}
+          />
+          {/* Radial gradient overlay */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(ellipse 60% 60% at 50% 50%, transparent 30%, #1F1A17 75%)",
+            }}
+          />
+        </div>
+
+        {/* Content */}
+        <div style={{ position: "relative", zIndex: 1, maxWidth: "760px" }}>
+          {/* Overline */}
+          <p
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "11px",
+              letterSpacing: "0.18em",
+              color: "rgba(122,146,176,0.7)",
+              textTransform: "uppercase",
+              marginBottom: "28px",
+              animation: "land-fade-up 0.7s ease both",
+              animationDelay: "0.1s",
+              opacity: 0,
+            }}
+          >
+            AI · UX Simulation
+          </p>
+
+          {/* Headline */}
+          <h1
+            style={{
+              fontFamily: "var(--font-display), 'Georgia', serif",
+              fontStyle: "italic",
+              fontSize: "clamp(48px, 7vw, 84px)",
+              fontWeight: 400,
+              lineHeight: 1.08,
+              letterSpacing: "-0.02em",
+              color: "#f5f2ef",
+              marginBottom: "28px",
+              animation: "land-fade-up 0.7s ease both",
+              animationDelay: "0.25s",
+              opacity: 0,
+            }}
+          >
+            See your product<br />
+            through every<br />
+            type of user.
+          </h1>
+
+          {/* Subline */}
+          <p
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "13px",
+              lineHeight: 1.75,
+              color: "rgba(245,242,239,0.45)",
+              letterSpacing: "0.01em",
+              marginBottom: "48px",
+              animation: "land-fade-up 0.7s ease both",
+              animationDelay: "0.4s",
+              opacity: 0,
+            }}
+          >
+            Upload screenshots. Define personas.<br />
+            Get usability findings powered by AI.
+          </p>
+
+          {/* CTAs */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "16px",
+              flexWrap: "wrap",
+              animation: "land-fade-up 0.7s ease both",
+              animationDelay: "0.55s",
+              opacity: 0,
+            }}
+          >
+            {/* Primary CTA */}
+            <Link
+              href="/dashboard"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "12px 28px",
+                backgroundColor: "#7A92B0",
+                color: "#141a1f",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: "13px",
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                borderRadius: "3px",
+                textDecoration: "none",
+                transition: "background-color 0.15s, transform 0.1s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#8fa3bf";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#7A92B0";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              Sign Up
+              <span style={{ opacity: 0.7 }}>→</span>
+            </Link>
+
+            {/* Secondary CTA */}
+            <a
+              href="#demo"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "12px 20px",
+                color: "rgba(245,242,239,0.4)",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: "13px",
+                letterSpacing: "0.04em",
+                textDecoration: "none",
+                transition: "color 0.15s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(245,242,239,0.75)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(245,242,239,0.4)")}
+            >
+              Watch demo ↓
+            </a>
+          </div>
+        </div>
+
+        {/* Scroll indicator */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: "40px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "6px",
+            animation: "land-fade-up 0.7s ease both",
+            animationDelay: "0.9s",
+            opacity: 0,
+          }}
+        >
+          <div
+            style={{
+              width: "1px",
+              height: "40px",
+              background:
+                "linear-gradient(to bottom, rgba(122,146,176,0.5), transparent)",
+            }}
+          />
+        </div>
+      </section>
+
+      {/* ── Video Section ── */}
+      <section
+        id="demo"
+        style={{
+          padding: "100px 2rem 120px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+        }}
+      >
+        {/* Section label */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "16px",
+            marginBottom: "48px",
+          }}
+        >
+          <div style={{ flex: 1, height: "1px", backgroundColor: "rgba(58,53,48,0.8)", maxWidth: "120px" }} />
+          <p
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "10px",
+              letterSpacing: "0.2em",
+              color: "rgba(122,146,176,0.6)",
+              textTransform: "uppercase",
+            }}
+          >
+            See it in action
+          </p>
+          <div style={{ flex: 1, height: "1px", backgroundColor: "rgba(58,53,48,0.8)", maxWidth: "120px" }} />
+        </div>
+
+        {/* Video embed */}
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "900px",
+            aspectRatio: "16 / 9",
+            borderRadius: "4px",
+            border: "1px solid rgba(58,53,48,0.8)",
+            overflow: "hidden",
+            backgroundColor: "#141210",
+          }}
+        >
+          {YOUTUBE_VIDEO_ID === "YOUR_VIDEO_ID_HERE" ? (
+            // Placeholder shown before the YouTube ID is set
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "12px",
+              }}
+            >
+              <div
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  borderRadius: "50%",
+                  border: "1px solid rgba(122,146,176,0.2)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <div
+                  style={{
+                    width: 0,
+                    height: 0,
+                    borderTop: "8px solid transparent",
+                    borderBottom: "8px solid transparent",
+                    borderLeft: "14px solid rgba(122,146,176,0.4)",
+                    marginLeft: "3px",
+                  }}
+                />
+              </div>
+              <p
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: "11px",
+                  color: "rgba(245,242,239,0.2)",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Video coming soon
+              </p>
+            </div>
+          ) : (
+            <iframe
+              src={`https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?rel=0&modestbranding=1`}
+              title="PersonaLab Demo"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              style={{ width: "100%", height: "100%", border: "none" }}
+            />
+          )}
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer
+        style={{
+          borderTop: "1px solid rgba(58,53,48,0.5)",
+          padding: "24px 2rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <p
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: "11px",
+            color: "rgba(245,242,239,0.2)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          © 2026 PersonaLab
+        </p>
+        <Link
+          href="/dashboard"
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: "11px",
+            color: "rgba(245,242,239,0.2)",
+            textDecoration: "none",
+            letterSpacing: "0.04em",
+            transition: "color 0.15s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(245,242,239,0.5)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(245,242,239,0.2)")}
+        >
+          Enter App →
+        </Link>
+      </footer>
     </div>
   );
 }
