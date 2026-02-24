@@ -17,11 +17,32 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const input = CreateProjectInput.parse(body);
 
-  const project = await prisma.project.create({
-    data: { ...input, userId: session.user.id },
-  });
+  const devMode = process.env.DEV_AUTH === "true";
 
-  return NextResponse.json(project, { status: 201 });
+  try {
+    const project = await prisma.$transaction(async (tx) => {
+      if (!devMode) {
+        const projectCount = await tx.project.count({
+          where: { userId: session.user.id },
+        });
+        if (projectCount >= 1) {
+          throw new Error("LIMIT_EXCEEDED");
+        }
+      }
+      return tx.project.create({
+        data: { ...input, userId: session.user.id },
+      });
+    });
+    return NextResponse.json(project, { status: 201 });
+  } catch (err) {
+    if (err instanceof Error && err.message === "LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Demo accounts are limited to 1 project." },
+        { status: 403 }
+      );
+    }
+    throw err;
+  }
 }
 
 export async function GET() {
