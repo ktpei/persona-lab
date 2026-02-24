@@ -5,6 +5,7 @@ import { PersonaTraits, AgeGroup, Gender } from "@persona-lab/shared";
 
 const BatchSaveInput = z.object({
   projectId: z.string(),
+  userId: z.string(),
   personas: z.array(
     z.object({
       name: z.string().min(1),
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
       prisma.persona.create({
         data: {
           projectId: input.projectId,
+          userId: input.userId,
           name: p.name,
           ageGroup: p.ageGroup,
           gender: p.gender,

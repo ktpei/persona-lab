@@ -5,6 +5,7 @@ import { z } from "zod";
 const CreateProjectInput = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
+  userId: z.string(),
 });
 
 export async function POST(req: NextRequest) {
