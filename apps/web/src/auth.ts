@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 const devMode = process.env.DEV_AUTH === "true";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: process.env.AUTH_SECRET,
   adapter: PrismaAdapter(prisma),
   providers: devMode
     ? [
@@ -28,7 +29,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }),
       ]
     : [Google, GitHub],
-  session: { strategy: devMode ? "jwt" : "database" },
+  session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   callbacks: {
     session({ session, user, token }) {

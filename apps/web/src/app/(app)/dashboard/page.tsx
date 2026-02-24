@@ -132,8 +132,8 @@ export default function Dashboard() {
               <DialogHeader>
                 <DialogTitle>Create project</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div className="space-y-1.5">
+              <div className="space-y-5 pt-3">
+                <div className="space-y-2">
                   <Label htmlFor="name" className="text-[13px]">Name</Label>
                   <Input
                     id="name"
@@ -142,8 +142,8 @@ export default function Dashboard() {
                     placeholder="My App Redesign"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="desc" className="text-[13px]">Description <span className="text-muted-foreground/50 font-normal">optional</span></Label>
+                <div className="space-y-2">
+                  <Label htmlFor="desc" className="text-[13px]">Description <span className="text-muted-foreground/50 font-normal">(optional)</span></Label>
                   <Input
                     id="desc"
                     value={description}
@@ -151,7 +151,7 @@ export default function Dashboard() {
                     placeholder="Testing the new checkout flow"
                   />
                 </div>
-                <Button onClick={createProject} disabled={!name.trim()} className="w-full">
+                <Button onClick={createProject} disabled={!name.trim()} className="w-full mt-1">
                   Create
                 </Button>
               </div>
