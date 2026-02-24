@@ -38,6 +38,7 @@ ENV HOSTNAME=0.0.0.0
 # Standalone output is self-contained (includes trimmed node_modules)
 COPY --from=builder /build/apps/web/.next/standalone ./
 COPY --from=builder /build/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder /build/apps/web/prisma/ ./prisma/
 
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
