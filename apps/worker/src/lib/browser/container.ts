@@ -2,7 +2,7 @@ import Docker from "dockerode";
 
 const IMAGE_NAME = "persona-browser";
 const CONTAINER_CDP_PORT = 9222;
-const CDP_READY_TIMEOUT_MS = 15_000;
+const CDP_READY_TIMEOUT_MS = 30_000;
 const CDP_POLL_INTERVAL_MS = 500;
 
 export class BrowserContainer {
@@ -78,7 +78,9 @@ export class BrowserContainer {
 
     while (Date.now() < deadline) {
       try {
-        const res = await fetch(`${endpoint}/json/version`);
+        const res = await fetch(`${endpoint}/json/version`, {
+          signal: AbortSignal.timeout(2000),
+        });
         if (res.ok) return;
       } catch {
         // Not ready yet
