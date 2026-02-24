@@ -66,7 +66,7 @@ export default function LandingPage() {
 
         {/* Nav link */}
         <Link
-          href="/dashboard"
+          href="/login"
           style={{
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: "12px",
@@ -235,7 +235,7 @@ export default function LandingPage() {
           >
             {/* Primary CTA */}
             <Link
-              href="/dashboard"
+              href="/login"
               style={{
                 display: "inline-flex",
                 alignItems: "center",

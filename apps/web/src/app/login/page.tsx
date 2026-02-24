@@ -1,16 +1,24 @@
 import { signIn } from "@/auth";
 import { Button } from "@/components/ui/button";
-import { Github } from "lucide-react";
+import { Github, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 const devMode = process.env.DEV_AUTH === "true";
 
 export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: "#1F1A17" }}>
+      <Link
+        href="/"
+        className="absolute top-5 left-6 flex items-center gap-1.5 text-[12px] font-mono tracking-wide text-white/35 hover:text-white/70 transition-colors"
+      >
+        <ArrowLeft className="h-3 w-3" />
+        Home
+      </Link>
       <div className="w-full max-w-sm space-y-6 rounded border p-8" style={{ background: "#282320", borderColor: "#3a3530" }}>
         <div className="space-y-1 text-center">
           <h1 className="text-xl font-bold tracking-tight" style={{ color: "#f5f2ef" }}>PersonaLab</h1>
-          <p className="text-[13px]" style={{ color: "rgba(245,242,239,0.5)" }}>Sign in to continue</p>
+          <p className="text-[13px]" style={{ color: "rgba(245,242,239,0.5)" }}>Create an account or sign in</p>
         </div>
 
         <div className="space-y-2">
@@ -18,7 +26,7 @@ export default function LoginPage() {
             <form
               action={async () => {
                 "use server";
-                await signIn("dev-admin", { redirectTo: "/" });
+                await signIn("dev-admin", { redirectTo: "/dashboard" });
               }}
             >
               <Button type="submit" className="w-full">
@@ -30,7 +38,7 @@ export default function LoginPage() {
               <form
                 action={async () => {
                   "use server";
-                  await signIn("google", { redirectTo: "/" });
+                  await signIn("google", { redirectTo: "/dashboard" });
                 }}
               >
                 <Button type="submit" variant="outline" className="w-full gap-2">
@@ -46,7 +54,7 @@ export default function LoginPage() {
               <form
                 action={async () => {
                   "use server";
-                  await signIn("github", { redirectTo: "/" });
+                  await signIn("github", { redirectTo: "/dashboard" });
                 }}
               >
                 <Button type="submit" variant="outline" className="w-full gap-2">
