@@ -25,10 +25,6 @@ export class BrowserContainer {
         PortBindings: {
           [`${CONTAINER_CDP_PORT}/tcp`]: [{ HostPort: "0" }],
         },
-        // Limit resources per container
-        Memory: 512 * 1024 * 1024, // 512MB
-        NanoCpus: 1_000_000_000,   // 1 CPU
-        ShmSize: 256 * 1024 * 1024, // 256MB shared memory for Chromium
         AutoRemove: true,
       },
     });
