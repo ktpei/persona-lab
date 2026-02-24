@@ -32,7 +32,7 @@ export class OpenRouterProvider implements LLMProvider {
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
-    });
+    }, { timeout: 90_000 });
 
     const text = response.choices[0]?.message?.content;
     if (!text) {
@@ -65,7 +65,7 @@ export class OpenRouterProvider implements LLMProvider {
       ],
       response_format: { type: "json_object" },
       temperature: 0.3,
-    });
+    }, { timeout: 90_000 });
 
     const text = response.choices[0]?.message?.content;
     if (!text) {
@@ -92,7 +92,7 @@ export class OpenRouterProvider implements LLMProvider {
         },
       ],
       temperature: 0.2,
-    });
+    }, { timeout: 90_000 });
 
     const text = response.choices[0]?.message?.content;
     if (!text) {
