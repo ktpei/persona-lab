@@ -926,9 +926,12 @@ export default function ProjectDetail() {
                 <Input
                   type="number"
                   value={maxSteps}
-                  onChange={(e) => setMaxSteps(Number(e.target.value))}
+                  onChange={(e) => {
+                    const v = e.target.valueAsNumber;
+                    if (!isNaN(v)) setMaxSteps(Math.min(30, Math.max(1, Math.round(v))));
+                  }}
                   min={1}
-                  max={100}
+                  max={30}
                   className="w-24"
                 />
               </div>
