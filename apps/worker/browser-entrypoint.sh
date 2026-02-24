@@ -5,7 +5,7 @@ set -e
 socat TCP-LISTEN:9222,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:9223 &
 
 # Launch Chromium with CDP on localhost:9223
-exec /ms-playwright/chromium-*/chrome-linux/chrome \
+exec /ms-playwright/chromium-*/chrome-linux64/chrome \
   --headless=new \
   --no-sandbox \
   --disable-gpu \
