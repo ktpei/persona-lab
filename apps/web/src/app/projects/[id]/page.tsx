@@ -33,7 +33,6 @@ import {
   Check,
   AlertTriangle,
   ArrowRight,
-  ChevronRight,
 } from "lucide-react";
 import { VoiceSessionPanel } from "@/components/voice/VoiceSessionPanel";
 import { FocusGroupSession } from "@/components/voice/FocusGroupSession";
@@ -93,14 +92,26 @@ export default function ProjectDetail() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
 
-  // Flow dialog
+  // Create flow dialog
   const [flowName, setFlowName] = useState("");
   const [flowMode, setFlowMode] = useState<"SCREENSHOT" | "AGENT">("SCREENSHOT");
   const [flowUrl, setFlowUrl] = useState("");
   const [flowGoal, setFlowGoal] = useState("");
   const [flowOpen, setFlowOpen] = useState(false);
 
-  // Delete dialog
+  // Edit flow dialog
+  const [editingFlow, setEditingFlow] = useState<Flow | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editGoal, setEditGoal] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [updating, setUpdating] = useState(false);
+
+  // Delete flow confirm
+  const [deleteFlowId, setDeleteFlowId] = useState<string | null>(null);
+  const [deletingFlow, setDeletingFlow] = useState(false);
+
+  // Delete project dialog
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -173,6 +184,47 @@ export default function ProjectDetail() {
   async function deletePersona(personaId: string) {
     const res = await fetch(`/api/personas/${personaId}`, { method: "DELETE" });
     if (res.ok) setPersonas((prev) => prev.filter((p) => p.id !== personaId));
+  }
+
+  function openEditFlow(flow: Flow) {
+    setEditingFlow(flow);
+    setEditName(flow.name);
+    setEditUrl(flow.url ?? "");
+    setEditGoal(flow.goal ?? "");
+    setEditOpen(true);
+  }
+
+  async function updateFlow() {
+    if (!editingFlow) return;
+    setUpdating(true);
+    const payload: Record<string, string | null> = { name: editName };
+    if (editingFlow.mode === "AGENT") {
+      payload.url = editUrl;
+      payload.goal = editGoal;
+    }
+    const res = await fetch(`/api/flows/${editingFlow.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setFlows((prev) => prev.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
+      setEditOpen(false);
+    }
+    setUpdating(false);
+  }
+
+  async function deleteFlow() {
+    if (!deleteFlowId) return;
+    setDeletingFlow(true);
+    const res = await fetch(`/api/flows/${deleteFlowId}`, { method: "DELETE" });
+    if (res.ok) {
+      setFlows((prev) => prev.filter((f) => f.id !== deleteFlowId));
+      setDeleteFlowId(null);
+      setEditOpen(false);
+    }
+    setDeletingFlow(false);
   }
 
   function togglePersona(id: string) {
@@ -308,43 +360,44 @@ export default function ProjectDetail() {
               </div>
               <div className="rounded border border-border/40 divide-y divide-border/30 overflow-hidden">
                 {flows.map((f) => (
-                  <Link key={f.id} href={f.mode === "AGENT" ? "#" : `/projects/${projectId}/flows/${f.id}`}>
-                    <div className="group flex items-center justify-between py-3 px-4 hover:bg-muted/30 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-7 w-7 items-center justify-center rounded bg-muted/60">
-                          {f.mode === "AGENT" ? (
-                            <Globe className="h-3.5 w-3.5 text-primary/70" />
-                          ) : (
-                            <Workflow className="h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                        </div>
-                        <div>
-                          <span className="text-[13px] font-medium text-foreground group-hover:text-primary transition-colors">
-                            {f.name}
-                          </span>
-                          {f.mode === "AGENT" && f.url && (
-                            <span className="ml-2 text-[11px] text-muted-foreground/50 font-mono truncate max-w-48 inline-block align-middle">
-                              {f.url}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
+                  <div
+                    key={f.id}
+                    className="group flex items-center justify-between py-3 px-4 hover:bg-muted/30 transition-colors cursor-pointer"
+                    onClick={() => openEditFlow(f)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-7 w-7 items-center justify-center rounded bg-muted/60">
                         {f.mode === "AGENT" ? (
-                          <Badge variant="outline" className="text-[10px]">
-                            Agent
-                          </Badge>
+                          <Globe className="h-3.5 w-3.5 text-primary/70" />
                         ) : (
-                          f._count && (
-                            <span className="text-[12px] text-muted-foreground font-mono">
-                              {f._count.frames} frames
-                            </span>
-                          )
+                          <Workflow className="h-3.5 w-3.5 text-muted-foreground" />
                         )}
-                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors" />
+                      </div>
+                      <div>
+                        <span className="text-[13px] font-medium text-foreground group-hover:text-primary transition-colors">
+                          {f.name}
+                        </span>
+                        {f.mode === "AGENT" && f.url && (
+                          <span className="ml-2 text-[11px] text-muted-foreground/50 font-mono truncate max-w-48 inline-block align-middle">
+                            {f.url}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  </Link>
+                    <div className="flex items-center gap-2">
+                      {f.mode === "AGENT" ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          Agent
+                        </Badge>
+                      ) : (
+                        f._count && (
+                          <span className="text-[12px] text-muted-foreground font-mono">
+                            {f._count.frames} frames
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </>
@@ -432,6 +485,125 @@ export default function ProjectDetail() {
                 >
                   Create
                 </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          {/* ===== Edit Flow Dialog ===== */}
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit flow</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                {/* Mode (read-only) */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
+                    Mode
+                  </label>
+                  <div className="flex items-center gap-2 px-3 py-2 rounded border border-border/40 bg-muted/20">
+                    {editingFlow?.mode === "AGENT" ? (
+                      <Globe className="h-3.5 w-3.5 text-primary/70" />
+                    ) : (
+                      <Workflow className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                    <span className="text-[13px] text-muted-foreground">
+                      {editingFlow?.mode === "AGENT" ? "Website URL" : "Screenshots"}
+                    </span>
+                    <span className="ml-auto text-[11px] text-muted-foreground/40">read-only</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[13px]">Name</label>
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Flow name"
+                  />
+                </div>
+
+                {editingFlow?.mode === "AGENT" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-[13px]">Website URL</label>
+                      <Input
+                        type="url"
+                        value={editUrl}
+                        onChange={(e) => setEditUrl(e.target.value)}
+                        placeholder="https://example.com"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[13px]">Goal</label>
+                      <Textarea
+                        value={editGoal}
+                        onChange={(e) => setEditGoal(e.target.value)}
+                        placeholder="Sign up for a free account and complete onboarding"
+                        rows={2}
+                      />
+                    </div>
+                  </>
+                )}
+
+                <Button
+                  onClick={updateFlow}
+                  disabled={
+                    !editName.trim() ||
+                    (editingFlow?.mode === "AGENT" && (!editUrl.trim() || !editGoal.trim())) ||
+                    updating
+                  }
+                  className="w-full"
+                >
+                  {updating ? "Saving..." : "Save changes"}
+                </Button>
+
+                <div className="pt-1 border-t border-border/30">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full gap-1.5 text-[13px] text-muted-foreground hover:text-destructive"
+                    onClick={() => {
+                      setDeleteFlowId(editingFlow?.id ?? null);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete flow
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* ===== Delete Flow Confirm Dialog ===== */}
+          <Dialog open={!!deleteFlowId} onOpenChange={(open) => { if (!open) setDeleteFlowId(null); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  Delete flow
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <p className="text-[13px] text-muted-foreground leading-relaxed">
+                  Are you sure you want to delete{" "}
+                  <span className="font-medium text-foreground">
+                    {flows.find((f) => f.id === deleteFlowId)?.name}
+                  </span>
+                  ? This will permanently remove the flow and all its frames.
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" size="sm" onClick={() => setDeleteFlowId(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={deleteFlow}
+                    disabled={deletingFlow}
+                  >
+                    {deletingFlow ? "Deleting..." : "Delete"}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
