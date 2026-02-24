@@ -53,7 +53,8 @@ export class BrowserContainer {
 
   getEndpoint(): string {
     if (!this.hostPort) throw new Error("Container not started");
-    return `http://127.0.0.1:${this.hostPort}`;
+    const host = process.env.BROWSER_CDP_HOST ?? "127.0.0.1";
+    return `http://${host}:${this.hostPort}`;
   }
 
   async stop(): Promise<void> {
