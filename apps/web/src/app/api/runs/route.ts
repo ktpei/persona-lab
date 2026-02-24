@@ -34,30 +34,58 @@ export async function POST(req: NextRequest) {
   }
 
   const isAgent = flow.mode === "AGENT";
+  const devMode = process.env.DEV_AUTH === "true";
 
-  const run = await prisma.run.create({
-    data: {
-      flowId: input.flowId,
-      userId: session.user.id,
-      config,
-      mode: flow.mode,
-      status: "SIMULATING",
-      personas: {
-        create: input.personaIds.map((personaId) => ({ personaId })),
-      },
-      episodes: {
-        create: input.personaIds.map((personaId) => ({
-          personaId,
-          seed: config.seed,
-        })),
-      },
-    },
-    include: {
-      personas: true,
-      episodes: true,
-    },
-  });
+  let run: Awaited<ReturnType<typeof prisma.run.create>> & {
+    episodes: { id: string; personaId: string; seed: number | null }[];
+    personas: { runId: string; personaId: string }[];
+  };
 
+  try {
+    run = await prisma.$transaction(async (tx) => {
+      if (!devMode) {
+        const runCount = await tx.run.count({
+          where: { userId: session.user.id },
+        });
+        if (runCount >= 2) {
+          throw new Error("LIMIT_EXCEEDED");
+        }
+      }
+
+      return tx.run.create({
+        data: {
+          flowId: input.flowId,
+          userId: session.user.id,
+          config,
+          mode: flow.mode,
+          status: "SIMULATING",
+          personas: {
+            create: input.personaIds.map((personaId) => ({ personaId })),
+          },
+          episodes: {
+            create: input.personaIds.map((personaId) => ({
+              personaId,
+              seed: config.seed,
+            })),
+          },
+        },
+        include: {
+          personas: true,
+          episodes: true,
+        },
+      });
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Demo accounts are limited to 2 runs." },
+        { status: 403 }
+      );
+    }
+    throw err;
+  }
+
+  // Enqueue queue jobs after the transaction completes (side effects outside tx)
   for (const episode of run.episodes) {
     if (isAgent) {
       await simulateAgentEpisodeQueue.add(QUEUE_NAMES.SIMULATE_AGENT_EPISODE, {
