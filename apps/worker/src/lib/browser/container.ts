@@ -25,6 +25,7 @@ export class BrowserContainer {
         PortBindings: {
           [`${CONTAINER_CDP_PORT}/tcp`]: [{ HostPort: "0" }],
         },
+        Memory: 1024 * 1024 * 1024, // 1GB — no ShmSize so full budget goes to Chrome
         AutoRemove: true,
       },
     });
