@@ -11,7 +11,7 @@ const instrumentSerif = Instrument_Serif({
   variable: "--font-display",
 });
 
-const YOUTUBE_VIDEO_ID = "19Ds9QMQLrI";
+const YOUTUBE_VIDEO_ID = "XazEYJLv324";
 
 export default function LandingPage() {
   return (
